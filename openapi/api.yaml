@@ -17,7 +17,7 @@ paths:
           in: path
           required: true
           schema:
-            type: string
+            type: integer
           description: The ID of the lambda function to execute
       requestBody:
         required: true
@@ -69,7 +69,21 @@ paths:
                   body:
                     type: object
                     description: The body of the response from the executed request
+                  required:
+                    - status
         '400':
           description: Invalid input provided
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    description: Error description
+                  required:
+                    - message
+        '404':
+          description: Non-existent script id
         '500':
           description: Internal server error or lambda execution error

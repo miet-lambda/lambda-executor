@@ -10,9 +10,11 @@
 #include <userver/server/handlers/ping.hpp>
 #include <userver/server/handlers/server_monitor.hpp>
 #include <userver/server/handlers/tests_control.hpp>
+#include <userver/storages/postgres/component.hpp>
 #include <userver/testsuite/testsuite_support.hpp>
 #include <userver/utils/daemon_run.hpp>
 
+#include <miet/lambda/components/executor.hpp>
 #include <miet/lambda/handlers/execute-lambda.hpp>
 
 int main(int argc, char* argv[]) {
@@ -30,7 +32,10 @@ int main(int argc, char* argv[]) {
           .Append<userver::components::HttpClient>()
           .Append<userver::components::TestsuiteSupport>();
 
-  miet::lambda::handlers::AppendExecuteLambda(component_list);
+  component_list.Append<userver::components::Postgres>("main-db");
+
+  component_list.Append<miet::lambda::handlers::ExecuteLambda>();
+  component_list.Append<miet::lambda::components::Executor>();
 
   return userver::utils::DaemonMain(argc, argv, component_list);
 }
