@@ -52,7 +52,9 @@ target_link_libraries(${PROJECT_NAME} PRIVATE ${PROJECT_NAME}-objs)
 
 
 add_executable(${PROJECT_NAME}-unittest
-    src/ut/http-request-ut.cpp    
+    src/ut/http-request-ut.cpp 
+    src/ut/http-response-ut.cpp 
+   
     src/ut/lua-executor-ut.cpp
 )
 target_link_libraries(${PROJECT_NAME}-unittest PRIVATE ${PROJECT_NAME}-objs userver::utest)
