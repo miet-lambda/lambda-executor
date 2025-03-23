@@ -19,16 +19,18 @@ endif()
 userver_setup_environment()
 
 
-add_library(miet SHARED
-    src/miet/lambda/lua/miet-lambda-lib.cpp
-)
-set_target_properties(miet PROPERTIES PREFIX "")
-
 add_library(${PROJECT_NAME}-objs OBJECT
+    src/miet/lambda/base/executor.hpp
+    src/miet/lambda/base/scripts-fetcher.hpp
+
     src/miet/lambda/http.hpp
     src/miet/lambda/http.cpp
     src/miet/lambda/execution-context.hpp
     src/miet/lambda/execution-context.cpp
+    src/miet/lambda/components/executor.hpp
+    src/miet/lambda/components/executor.cpp
+    src/miet/lambda/fetchers/db-fetcher.hpp
+    src/miet/lambda/fetchers/db-fetcher.cpp
 
     src/miet/lambda/lua/utils.hpp
     src/miet/lambda/lua/executor.hpp
@@ -49,6 +51,11 @@ target_link_libraries(${PROJECT_NAME}-objs PUBLIC
 
 add_executable(${PROJECT_NAME} src/main.cpp)
 target_link_libraries(${PROJECT_NAME} PRIVATE ${PROJECT_NAME}-objs)
+add_custom_command(TARGET ${PROJECT_NAME} PRE_BUILD
+                   COMMAND ${CMAKE_COMMAND} -E copy_directory
+                   ${CMAKE_SOURCE_DIR}/lua/
+                  $<TARGET_FILE_DIR:${PROJECT_NAME}>
+)
 
 
 add_executable(${PROJECT_NAME}-unittest
@@ -59,6 +66,11 @@ add_executable(${PROJECT_NAME}-unittest
 )
 target_link_libraries(${PROJECT_NAME}-unittest PRIVATE ${PROJECT_NAME}-objs userver::utest)
 add_google_tests(${PROJECT_NAME}-unittest)
+add_custom_command(TARGET ${PROJECT_NAME}-unittest PRE_BUILD
+                   COMMAND ${CMAKE_COMMAND} -E copy_directory
+                   ${CMAKE_SOURCE_DIR}/lua/
+                  $<TARGET_FILE_DIR:${PROJECT_NAME}-unittest>
+)
 
 
 add_executable(${PROJECT_NAME}-benchmark

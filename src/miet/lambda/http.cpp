@@ -1,13 +1,18 @@
 #include <miet/lambda/http.hpp>
 
+#include <userver/formats/json/value_builder.hpp>
+
 namespace miet::lambda::http {
 static void PopulateMessageFromJson(Message& message,
                                     userver::formats::json::Value json) {
-  message.SetBody(json["body"].As<std::string>());
+  message.SetBody(json["body"].As<std::string>(""));
+
   auto headers = std::make_shared<userver::http::headers::HeaderMap>();
-  for (auto header = json["headers"].begin(); header != json["headers"].end();
-       ++header) {
-    headers->emplace(header.GetName(), header->As<std::string>());
+  if (json.HasMember("headers")) {
+    for (auto header = json["headers"].begin(); header != json["headers"].end();
+         ++header) {
+      headers->emplace(header.GetName(), header->As<std::string>());
+    }
   }
   message.SetHeaders(std::move(headers));
 }
@@ -26,6 +31,15 @@ void Message::SetHeaders(HeadersMapPtr headers) noexcept {
 std::string_view Message::GetBody() const noexcept { return body_; }
 
 void Message::SetBody(std::string body) noexcept { body_ = std::move(body); }
+
+Request Request::Default() noexcept {
+  Request request;
+  PopulateMessageDefault(request);
+  request.SetMethod(Request::HttpMethod::kGet);
+  request.SetQueryParams(
+      std::make_shared<std::unordered_map<std::string, std::string>>());
+  return request;
+}
 
 Request::HttpMethod Request::GetMethod() const noexcept { return method_; }
 
@@ -53,21 +67,21 @@ Request Request::FromJson(userver::formats::json::Value json) {
   request.SetUrl(json["url"].As<std::string>());
   auto queryParams =
       std::make_shared<std::unordered_map<std::string, std::string>>();
-  for (auto param = json["query"].begin(); param != json["query"].end();
-       ++param) {
-    queryParams->emplace(param.GetName(), param->As<std::string>());
+  if (json.HasMember("query")) {
+    for (auto param = json["query"].begin(); param != json["query"].end();
+         ++param) {
+      queryParams->emplace(param.GetName(), param->As<std::string>());
+    }
   }
   request.SetQueryParams(std::move(queryParams));
   return request;
 }
 
-Request Request::Default() noexcept {
-  Request request;
-  PopulateMessageDefault(request);
-  request.SetMethod(Request::HttpMethod::kGet);
-  request.SetQueryParams(
-      std::make_shared<std::unordered_map<std::string, std::string>>());
-  return request;
+Response Response::Default() noexcept {
+  Response response;
+  PopulateMessageDefault(response);
+  response.SetStatus(Response::HttpStatus::kOk);
+  return response;
 }
 
 Response::HttpStatus Response::GetStatus() const noexcept { return status_; }
@@ -76,10 +90,19 @@ void Response::SetStatus(Response::HttpStatus status) noexcept {
   status_ = status;
 }
 
-Response Response::Default() noexcept {
-  Response response;
-  PopulateMessageDefault(response);
-  response.SetStatus(Response::HttpStatus::kOk);
-  return response;
+userver::formats::json::Value Response::ToJson() const noexcept {
+  userver::formats::json::ValueBuilder builder;
+  builder.EmplaceNocheck("status", static_cast<std::uint16_t>(status_));
+  {
+    userver::formats::json::ValueBuilder headersBuilder;
+    for (const auto& [header, value] : *GetHeaders()) {
+      headersBuilder.EmplaceNocheck(header, value);
+    }
+    if (!headersBuilder.IsNull()) {
+      builder.EmplaceNocheck("headers", std::move(headersBuilder));
+    }
+  }
+  builder.EmplaceNocheck("body", GetBody());
+  return builder.ExtractValue();
 }
 }  // namespace miet::lambda::http

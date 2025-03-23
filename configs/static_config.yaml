@@ -95,3 +95,15 @@ components_manager:
             path: /v1/execute/lambda/{id}
             method: POST
             task_processor: main-task-processor
+
+        executor:
+            language-type: $executor-language-type
+            language-type#env: EXECUTOR_LANGUAGE_TYPE
+
+        main-db:
+            dbconnection: $dbconnection
+            dbconnection#env: DB_CONNECTION
+            blocking_task_processor: fs-task-processor
+            dns_resolver: async
+            sync-start: true
+            connlimit_mode: manual

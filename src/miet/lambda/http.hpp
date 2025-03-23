@@ -56,6 +56,8 @@ class Response final : public Message {
   HttpStatus GetStatus() const noexcept;
   void SetStatus(HttpStatus status) noexcept;
 
+  userver::formats::json::Value ToJson() const noexcept;
+
  private:
   HttpStatus status_;
 };

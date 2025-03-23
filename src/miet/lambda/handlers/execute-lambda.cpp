@@ -1,32 +1,58 @@
 #include <miet/lambda/handlers/execute-lambda.hpp>
 
+#include <miet/lambda/components/executor.hpp>
+#include <miet/lambda/exceptions.hpp>
+#include <miet/lambda/execution-context.hpp>
+
 #include <userver/components/component.hpp>
-
-#include <userver/server/handlers/http_handler_base.hpp>
-
-#include <boost/core/ignore_unused.hpp>
+#include <userver/formats/json/serialize.hpp>
+#include <userver/formats/json/value_builder.hpp>
+#include <userver/logging/log.hpp>
+#include <userver/server/handlers/exceptions.hpp>
 
 namespace miet::lambda::handlers {
-namespace {
-class ExecuteLambda final : public userver::server::handlers::HttpHandlerBase {
- public:
-  static constexpr std::string_view kName = "handler-execute-lambda";
+ExecuteLambda::ExecuteLambda(
+    const userver::components::ComponentConfig& config,
+    const userver::components::ComponentContext& context)
+    : HttpHandlerBase(config, context) {
+  executor_ = context.FindComponent<components::Executor>().GetExecutor();
+}
 
-  ExecuteLambda(const userver::components::ComponentConfig& config,
-                const userver::components::ComponentContext& component_context)
-      : HttpHandlerBase(config, component_context) {
-    boost::ignore_unused(kName);
+std::string ExecuteLambda::HandleRequestThrow(
+    const userver::server::http::HttpRequest& request,
+    [[maybe_unused]] userver::server::request::RequestContext& context) const {
+  const auto scriptId = request.GetPathArg("id");
+
+  http::Request scriptRequest;
+  try {
+    const auto jsonBody =
+        userver::formats::json::FromString(request.RequestBody());
+    scriptRequest = http::Request::FromJson(jsonBody);
+  } catch (const std::exception& ex) {
+    userver::formats::json::ValueBuilder errorBuilder;
+    errorBuilder.EmplaceNocheck("message", ex.what());
+    throw userver::server::handlers::ClientError(
+        userver::server::handlers::ExternalBody{
+            .body =
+                userver::formats::json::ToString(errorBuilder.ExtractValue())});
   }
 
-  std::string HandleRequestThrow(
-      const userver::server::http::HttpRequest& request,
-      userver::server::request::RequestContext&) const override {
-    return request.GetPathArg("id");
-  }
-};
-}  // namespace
+  const auto executionContext = userver::utils::MakeSharedRef<ExecutionContext>(
+      std::move(scriptRequest), http::Response::Default());
 
-void AppendExecuteLambda(userver::components::ComponentList& component_list) {
-  component_list.Append<ExecuteLambda>();
+  try {
+    executor_->Execute(scriptId, executionContext);
+  } catch (const NotFoundScriptError& ex) {
+    LOG_WARNING() << "Can't find script: " << ex.what();
+    throw userver::server::handlers::ResourceNotFound();
+  } catch (const std::exception& ex) {
+    LOG_ERROR() << "Execution exception: " << ex.what();
+    throw userver::server::handlers::InternalServerError();
+  } catch (...) {
+    LOG_ERROR() << "Unkonw execution exception";
+    throw userver::server::handlers::InternalServerError();
+  }
+  return userver::formats::json::ToString(
+      executionContext->GetResponse().ToJson());
 }
 }  // namespace miet::lambda::handlers
