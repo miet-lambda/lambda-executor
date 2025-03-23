@@ -1,9 +1,3 @@
-/**
- * @copyright Copyright 2025 MIET-Lambda.
- *            All rights reserved.
- *            Licensed under the Apache-2.0 License and CLA.
- */
-
 #include <userver/clients/dns/component.hpp>
 #include <userver/clients/http/client.hpp>
 #include <userver/clients/http/component.hpp>
@@ -19,7 +13,7 @@
 #include <userver/testsuite/testsuite_support.hpp>
 #include <userver/utils/daemon_run.hpp>
 
-#include <miet/lambda-executor/handlers/execute-lambda.hpp>
+#include <miet/lambda/handlers/execute-lambda.hpp>
 
 int main(int argc, char* argv[]) {
   auto component_list =
@@ -36,7 +30,7 @@ int main(int argc, char* argv[]) {
           .Append<userver::components::HttpClient>()
           .Append<userver::components::TestsuiteSupport>();
 
-  miet::lambda_executor::handlers::AppendExecuteLambda(component_list);
+  miet::lambda::handlers::AppendExecuteLambda(component_list);
 
   return userver::utils::DaemonMain(argc, argv, component_list);
 }
