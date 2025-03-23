@@ -1,17 +1,14 @@
-/**
- * @copyright Copyright 2025 MIET-Lambda.
- *            All rights reserved.
- *            Licensed under the Apache-2.0 License and CLA.
- */
-
-#include <miet/lambda-executor/handlers/execute-lambda.hpp>
+#include <miet/lambda/handlers/execute-lambda.hpp>
 
 #include <benchmark/benchmark.h>
 #include <userver/engine/run_standalone.hpp>
+#include <userver/fs/blocking/read.hpp>
 
 #include <LuaCpp/LuaCpp.hpp>
 
-void ExecuteLuaBenchmark(benchmark::State& state) {
+constexpr auto kJsonSamplePath = "data/sample.json";
+
+static void ExecuteLuaBenchmark(benchmark::State& state) {
   userver::engine::RunStandalone([&] {
     constexpr std::uint64_t kArgs[] = {11, 12, 13, 14, 15};
     std::uint64_t i = 0;
@@ -43,4 +40,27 @@ void ExecuteLuaBenchmark(benchmark::State& state) {
   });
 }
 
+static void LuaJsonBenchmark(benchmark::State& state) {
+  userver::engine::RunStandalone([&] {
+    const auto jsonData =
+        userver::fs::blocking::ReadFileContents(kJsonSamplePath);
+
+    const auto jsonVar = std::make_shared<LuaCpp::Engine::LuaTString>(jsonData);
+
+    LuaCpp::LuaContext ctx;
+    ctx.AddGlobalVariable("json_string", jsonVar);
+    ctx.CompileString("benchmark-json", R"(
+          local json = require("dkjson")
+
+          local decoded_data, pos, err = json.decode(json_string, 1, nil)
+          local encoded_data = json.encode(data, { indent = true })
+    )");
+
+    for (auto _ : state) {
+      ctx.Run("benchmark-json");
+    }
+  });
+}
+
 BENCHMARK(ExecuteLuaBenchmark);
+BENCHMARK(LuaJsonBenchmark);

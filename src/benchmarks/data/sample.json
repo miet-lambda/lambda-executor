@@ -1,0 +1,52 @@
+{
+  "company": "TechCorp",
+  "founded": 2005,
+  "headquarters": {
+    "city": "San Francisco",
+    "state": "California",
+    "country": "USA"
+  },
+  "departments": [
+    {
+      "name": "Engineering",
+      "manager": "Alice Johnson",
+      "employees": 120,
+      "projects": [
+        {
+          "name": "Project Alpha",
+          "status": "In Progress",
+          "deadline": "2023-12-31"
+        },
+        {
+          "name": "Project Beta",
+          "status": "Completed",
+          "deadline": "2023-06-30"
+        }
+      ]
+    },
+    {
+      "name": "Marketing",
+      "manager": "Bob Smith",
+      "employees": 50,
+      "campaigns": [
+        {
+          "name": "Summer Sale",
+          "budget": 50000,
+          "channels": ["Social Media", "Email", "TV"]
+        },
+        {
+          "name": "Product Launch",
+          "budget": 75000,
+          "channels": ["Social Media", "Influencers", "Events"]
+        }
+      ]
+    }
+  ],
+  "revenue": {
+    "2022": 12000000,
+    "2021": 9500000,
+    "2020": 8000000
+  },
+  "active": true,
+  "tags": ["technology", "innovation", "startup"]
+}

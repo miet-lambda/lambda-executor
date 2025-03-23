@@ -1,10 +1,4 @@
-/**
- * @copyright Copyright 2025 MIET-Lambda.
- *            All rights reserved.
- *            Licensed under the Apache-2.0 License and CLA.
- */
-
-#include <miet/lambda-executor/handlers/execute-lambda.hpp>
+#include <miet/lambda/handlers/execute-lambda.hpp>
 
 #include <userver/components/component.hpp>
 
@@ -12,7 +6,7 @@
 
 #include <boost/core/ignore_unused.hpp>
 
-namespace miet::lambda_executor::handlers {
+namespace miet::lambda::handlers {
 namespace {
 class ExecuteLambda final : public userver::server::handlers::HttpHandlerBase {
  public:
@@ -35,4 +29,4 @@ class ExecuteLambda final : public userver::server::handlers::HttpHandlerBase {
 void AppendExecuteLambda(userver::components::ComponentList& component_list) {
   component_list.Append<ExecuteLambda>();
 }
-}  // namespace miet::lambda_executor::handlers
+}  // namespace miet::lambda::handlers

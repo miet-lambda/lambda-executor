@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.12...3.31)
 
+set(CMAKE_CXX_STANDARD 20)
+
 project(lambda-executor
         LANGUAGES CXX
         DESCRIPTION "A service for running lambda-scripts on nodes"
@@ -17,9 +19,25 @@ endif()
 userver_setup_environment()
 
 
+add_library(miet SHARED
+    src/miet/lambda/lua/miet-lambda-lib.cpp
+)
+set_target_properties(miet PROPERTIES PREFIX "")
+
 add_library(${PROJECT_NAME}-objs OBJECT
-    src/miet/lambda-executor/handlers/execute-lambda.hpp
-    src/miet/lambda-executor/handlers/execute-lambda.cpp
+    src/miet/lambda/http.hpp
+    src/miet/lambda/http.cpp
+    src/miet/lambda/execution-context.hpp
+    src/miet/lambda/execution-context.cpp
+
+    src/miet/lambda/lua/utils.hpp
+    src/miet/lambda/lua/executor.hpp
+    src/miet/lambda/lua/executor.cpp
+    src/miet/lambda/lua/http-context.hpp
+    src/miet/lambda/lua/http-context.cpp
+
+    src/miet/lambda/handlers/execute-lambda.hpp
+    src/miet/lambda/handlers/execute-lambda.cpp
 )
 target_include_directories(${PROJECT_NAME}-objs PUBLIC src/)
 target_link_libraries(${PROJECT_NAME}-objs PUBLIC
@@ -34,8 +52,8 @@ target_link_libraries(${PROJECT_NAME} PRIVATE ${PROJECT_NAME}-objs)
 
 
 add_executable(${PROJECT_NAME}-unittest
-    src/ut/execute-lambda.cpp
-    src/ut/execute-lua.cpp
+    src/ut/http-request-ut.cpp    
+    src/ut/lua-executor-ut.cpp
 )
 target_link_libraries(${PROJECT_NAME}-unittest PRIVATE ${PROJECT_NAME}-objs userver::utest)
 add_google_tests(${PROJECT_NAME}-unittest)
@@ -46,6 +64,12 @@ add_executable(${PROJECT_NAME}-benchmark
 )
 target_link_libraries(${PROJECT_NAME}-benchmark PRIVATE ${PROJECT_NAME}-objs userver::ubench)
 add_google_benchmark_tests(${PROJECT_NAME}-benchmark)
+
+add_custom_command(TARGET ${PROJECT_NAME}-benchmark PRE_BUILD
+                   COMMAND ${CMAKE_COMMAND} -E copy_directory
+                   ${CMAKE_SOURCE_DIR}/src/benchmarks/
+                  $<TARGET_FILE_DIR:${PROJECT_NAME}-benchmark>
+)
 
 
 userver_testsuite_add_simple()
