@@ -1,0 +1,75 @@
+openapi: 3.0.0
+info:
+  title: lambda-executor API
+  version: 1.0.0
+  description: API for executing HTTP requests via lambda functions
+
+paths:
+  /v1/execute/lambda/{id}:
+    post:
+      summary: Execute a lambda function with an embedded HTTP request
+      description: |
+        This endpoint takes an HTTP request in the body, executes it, and returns the response.
+        The `id` parameter specifies the lambda function to use for execution.
+      operationId: executeLambda
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The ID of the lambda function to execute
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                method:
+                  type: string
+                  enum: [GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS]
+                  description: The HTTP method of the embedded request
+                url:
+                  type: string
+                  format: uri
+                  description: The URL to which the embedded request will be sent
+                query:
+                  type: object
+                  additionalProperties:
+                    type: string
+                  description: Query parameters to include in the embedded request
+                headers:
+                  type: object
+                  additionalProperties:
+                    type: string
+                  description: Headers to include in the embedded request
+                body:
+                  type: string
+                  description: The body of the embedded request (if applicable)
+              required:
+                - method
+                - url
+      responses:
+        '200':
+          description: The response from the executed HTTP request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: integer
+                    description: The HTTP status code from the executed request
+                  headers:
+                    type: object
+                    additionalProperties:
+                      type: string
+                    description: The headers from the executed request
+                  body:
+                    type: object
+                    description: The body of the response from the executed request
+        '400':
+          description: Invalid input provided
+        '500':
+          description: Internal server error or lambda execution error

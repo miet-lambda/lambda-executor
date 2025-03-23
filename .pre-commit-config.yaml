@@ -5,4 +5,4 @@ repos:
       - id: clang-format
         args: [--style=file]
       - id: cpplint
-        args: ['--filter=-runtime/references,-build/include_order,-build/include_what_you_use']
+        args: ['--filter=-runtime/references,-build/include_order,-build/include_what_you_use,-legal/copyright,-whitespace/indent_namespace,-build/namespaces']
