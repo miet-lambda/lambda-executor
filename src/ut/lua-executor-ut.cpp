@@ -1,9 +1,11 @@
 #include <miet/lambda/lua/executor.hpp>
 
+#include <miet/lambda/testutils/mocks/http-client.hpp>
 #include <miet/lambda/testutils/mocks/scripts-fetcher.hpp>
 #include <miet/lambda/testutils/utils.hpp>
 
 #include <userver/http/common_headers.hpp>
+#include <userver/http/content_type.hpp>
 #include <userver/utest/utest.hpp>
 
 using namespace miet::lambda;
@@ -12,11 +14,14 @@ class TestLuaExecutor : public testing::Test {
  protected:
   void SetUp() override {
     fetcher_ = std::make_shared<ScriptsFetcherMock>();
-    executor_ = std::make_shared<lua::Executor>(fetcher_);
+    httpClient_ = std::make_shared<HttpClientMock>();
+    executor_ = std::make_shared<lua::Executor>(
+        fetcher_, lua::Dependencies{.httpClient = httpClient_});
   }
 
  protected:
   std::shared_ptr<ScriptsFetcherMock> fetcher_ = nullptr;
+  std::shared_ptr<HttpClientMock> httpClient_ = nullptr;
   std::shared_ptr<lua::Executor> executor_ = nullptr;
 };
 
@@ -154,4 +159,185 @@ UTEST_F(TestLuaExecutor, OutgoingResponse) {
   const auto jsonBody = userver::formats::json::FromString(response.GetBody());
   ASSERT_EQ(jsonBody["name"].As<std::string>(), "Alex");
   ASSERT_EQ(jsonBody["age"].As<std::uint64_t>(), 18);
+}
+
+UTEST_F(TestLuaExecutor, HttpClientSendError) {
+  constexpr auto kMessageHeader =
+      userver::http::headers::PredefinedHeader("message");
+  constexpr auto kSendErrorMessage = "Can't send request";
+
+  EXPECT_CALL(*fetcher_, Fetch("http-client-send-error"))
+      .WillOnce(::testing::Return(R"(
+    local client = require('miet.http.client').get()
+    local context = require('miet.http.context').get()
+
+    local outgoing_response = context:response()
+
+    local response, err = client:send('GET', 'http://localhost:80/v1/error')
+    if response ~= nil or err == nil then
+      print(response)
+      error('Expected send error')
+    end
+
+    outgoing_response['headers'] = {
+      message = err
+    }
+  )"));
+
+  EXPECT_CALL(*httpClient_, Send(::testing::_))
+      .WillOnce(
+          [&]([[maybe_unused]] const http::Request& request) -> http::Response {
+            throw std::runtime_error(kSendErrorMessage);
+            return {};
+          });
+
+  const auto context = userver::utils::MakeSharedRef<ExecutionContext>(
+      http::Request::Default(), http::Response::Default());
+  ASSERT_NO_THROW(executor_->Execute("http-client-send-error", context));
+
+  ASSERT_TRUE(context->GetResponse().GetHeaders()->contains(kMessageHeader));
+  ASSERT_EQ(context->GetResponse().GetHeaders()->at(kMessageHeader),
+            kSendErrorMessage);
+}
+
+UTEST_F(TestLuaExecutor, HttpClientRequest) {
+  EXPECT_CALL(*fetcher_, Fetch("http-client-request"))
+      .WillOnce(::testing::Return(R"(
+    local client = require('miet.http.client').get()
+
+    local response, err = client:send('HEAD', 'http://localhost:80/v1/hello')
+    if err ~= nil then
+      error('Can\'t send request: ' .. err)
+    end
+
+    response, err = client:send('POST', 'http://localhost:80/v1/message', {
+        query = {
+          key = 'value'
+        },
+        headers = {
+          ['Content-Type'] = 'application/json'
+        },
+        body = 'Hello, world!'
+    })
+    if err ~= nil then
+      error('Can\'t send request with additional params: ' .. err)
+    end
+  )"));
+
+  std::shared_ptr<http::Request> requestWithoutParams = nullptr;
+  std::shared_ptr<http::Request> requestWithParams = nullptr;
+
+  EXPECT_CALL(*httpClient_, Send(::testing::_))
+      .Times(2)
+      .WillRepeatedly([&](const http::Request& request) -> http::Response {
+        if (!requestWithoutParams) {
+          requestWithoutParams = std::make_shared<http::Request>(request);
+        } else {
+          requestWithParams = std::make_shared<http::Request>(request);
+        }
+        return {};
+      });
+
+  const auto context = userver::utils::MakeSharedRef<ExecutionContext>(
+      http::Request::Default(), http::Response::Default());
+  ASSERT_NO_THROW(executor_->Execute("http-client-request", context));
+
+  ASSERT_EQ(requestWithoutParams->GetMethod(),
+            http::Request::HttpMethod::kHead);
+  ASSERT_EQ(requestWithoutParams->GetUrl(), "http://localhost:80/v1/hello");
+
+  ASSERT_EQ(requestWithParams->GetMethod(), http::Request::HttpMethod::kPost);
+  ASSERT_EQ(requestWithParams->GetUrl(), "http://localhost:80/v1/message");
+  ASSERT_EQ(requestWithParams->GetQueryParams()->at("key"), "value");
+  ASSERT_EQ(
+      requestWithParams->GetHeaders()->at(userver::http::headers::kContentType),
+      userver::http::content_type::kApplicationJson);
+  ASSERT_EQ(requestWithParams->GetBody(), "Hello, world!");
+}
+
+UTEST_F(TestLuaExecutor, HttpClientResponse) {
+  EXPECT_CALL(*fetcher_, Fetch("http-client-response"))
+      .WillOnce(::testing::Return(R"(
+    local client = require('miet.http.client').get()
+
+    local response, err = client:send('HEAD', 'http://localhost:80/v1/hello')
+    if err ~= nil then
+      error('Can\'t send request: ' .. err)
+    end
+
+    if response['status'] ~= 201 then
+      error('Incorrect status')
+    end
+
+    if response['headers']['Content-Type'] ~= 'text/plain; charset=utf-8' then
+      error('Incorrect headers')
+    end
+
+    if response['body'] ~= 'Hello, world!' then
+      error('Incorrect body')
+    end
+  )"));
+
+  EXPECT_CALL(*httpClient_, Send(::testing::_))
+      .WillOnce(
+          [&]([[maybe_unused]] const http::Request& request) -> http::Response {
+            http::Response response;
+            response.SetStatus(http::Response::HttpStatus::kCreated);
+            const auto headers =
+                std::make_shared<userver::http::headers::HeaderMap>();
+            headers->emplace(
+                userver::http::headers::kContentType,
+                userver::http::content_type::kTextPlain.ToString());
+            response.SetHeaders(headers);
+            response.SetBody("Hello, world!");
+            return response;
+          });
+
+  const auto context = userver::utils::MakeSharedRef<ExecutionContext>(
+      http::Request::Default(), http::Response::Default());
+  ASSERT_NO_THROW(executor_->Execute("http-client-response", context));
+}
+
+UTEST_F(TestLuaExecutor, HttpClientSendAliases) {
+  EXPECT_CALL(*fetcher_, Fetch("http-client-send-aliases"))
+      .WillOnce(::testing::Return(R"(
+    local client = require('miet.http.client').get()
+
+    print(type(client))
+    print(client.get)
+    local response, err = client:get('http://localhost:80/v1/hello')
+    if err ~= nil then
+      error('Can\'t send GET request: ' .. err)
+    end
+
+    response, err = client:post('http://localhost:80/v1/hello', {
+        body = 'Hello, world!'
+    })
+    if err ~= nil then
+      error('Can\'t send POST request: ' .. err)
+    end
+  )"));
+
+  std::shared_ptr<http::Request::HttpMethod> getMethod = nullptr;
+  std::shared_ptr<http::Request::HttpMethod> postMethod = nullptr;
+
+  EXPECT_CALL(*httpClient_, Send(::testing::_))
+      .Times(2)
+      .WillRepeatedly([&](const http::Request& request) -> http::Response {
+        if (!getMethod) {
+          getMethod =
+              std::make_shared<http::Request::HttpMethod>(request.GetMethod());
+        } else {
+          postMethod =
+              std::make_shared<http::Request::HttpMethod>(request.GetMethod());
+        }
+        return {};
+      });
+
+  const auto context = userver::utils::MakeSharedRef<ExecutionContext>(
+      http::Request::Default(), http::Response::Default());
+  ASSERT_NO_THROW(executor_->Execute("http-client-send-aliases", context));
+
+  ASSERT_EQ(*getMethod, http::Request::HttpMethod::kGet);
+  ASSERT_EQ(*postMethod, http::Request::HttpMethod::kPost);
 }

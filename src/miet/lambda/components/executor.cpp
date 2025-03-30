@@ -1,8 +1,10 @@
 #include <miet/lambda/components/executor.hpp>
 
 #include <miet/lambda/fetchers/db-fetcher.hpp>
+#include <miet/lambda/http-client.hpp>
 #include <miet/lambda/lua/executor.hpp>
 
+#include <userver/clients/http/component.hpp>
 #include <userver/components/component_config.hpp>
 #include <userver/components/component_context.hpp>
 #include <userver/storages/postgres/component.hpp>
@@ -20,8 +22,13 @@ Executor::Executor(const userver::components::ComponentConfig& config,
         context.FindComponent<userver::components::Postgres>("main-db")
             .GetCluster();
     auto fetcher = std::make_shared<DBScriptsFetcher>(std::move(cluster));
-    executor_ =
-        std::make_shared<miet::lambda::lua::Executor>(std::move(fetcher));
+    auto& nativeClient =
+        context.FindComponent<userver::components::HttpClient>()
+            .GetHttpClient();
+    auto httpClient = std::make_shared<http::Client>(nativeClient);
+    executor_ = std::make_shared<miet::lambda::lua::Executor>(
+        std::move(fetcher),
+        lua::Dependencies{.httpClient = std::move(httpClient)});
   } else {
     throw std::runtime_error("Unexpected executor type");
   }
