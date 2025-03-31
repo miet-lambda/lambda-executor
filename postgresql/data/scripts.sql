@@ -91,21 +91,28 @@ INSERT INTO scripts (id, path, parent_project_id, source_code) VALUES
     return
   end
 
-  local data, pos, err2 = json.decode(response["body"], 1, nil)
-  if err2 ~= nil then
+  local data, pos, err = json.decode(response["body"], 1, nil)
+  if err ~= nil then
     outgoing_response["status"] = 500
-    outgoing_response["body"] = err2
+    outgoing_response["body"] = err
     return
   end
 
-  if data["status"] ~= 200 then
+  local inner_data, pos, err = json.decode(data["body"], 1, nil)
+  if err ~= nil then
+    outgoing_response["status"] = 500
+    outgoing_response["body"] = err
+    return
+  end
+
+  if data["status"] ~= 200 or inner_data["result"] == nil then
     outgoing_response["status"] = 500
     outgoing_response["body"] = data["body"]
     return
   end
 
   outgoing_response["body"] = {
-    result = incoming_n * tonumber(data["body"]["result"] or 0)
+    result = incoming_n * tonumber(inner_data["result"])
   }
 '),
 (5, '/v1/test/http/client', 1,

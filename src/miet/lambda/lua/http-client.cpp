@@ -1,5 +1,7 @@
 #include <miet/lambda/lua/http-client.hpp>
 
+#include <userver/logging/log.hpp>
+
 namespace miet::lambda::lua {
 namespace {
 class HttpClientMethod final : public LuaCpp::LuaMetaObject {
@@ -8,6 +10,7 @@ class HttpClientMethod final : public LuaCpp::LuaMetaObject {
       : httpClient_(std::move(httpClient)) {}
 
   int Execute(LuaCpp::Engine::LuaState& L) override {
+    LOG_DEBUG() << "Start client:send method";
     const auto n = lua_gettop(L);
     if (n != 4 && n != 5) {
       return luaL_error(L,
@@ -47,16 +50,28 @@ class HttpClientMethod final : public LuaCpp::LuaMetaObject {
 
     http::Response response;
     try {
+      LOG_DEBUG() << "Sending "
+                  << userver::server::http::ToString(request.GetMethod())
+                  << " request to " << request.GetUrl();
       response = httpClient_->Send(request);
+      LOG_DEBUG() << "Sended "
+                  << userver::server::http::ToString(request.GetMethod())
+                  << " request to " << request.GetUrl();
     } catch (const std::exception& ex) {
+      LOG_ERROR() << "Can't send "
+                  << userver::server::http::ToString(request.GetMethod())
+                  << " request to " << request.GetUrl();
       lua_pushnil(L);
       lua_pushstring(L, ex.what());
       return 2;
     }
 
+    LOG_DEBUG() << "Bilding lua response...";
     BuildLuaResponse(L, response);
+    LOG_DEBUG() << "Lua response is built";
 
     lua_pushnil(L);
+    LOG_DEBUG() << "Finish client:send method";
     return 2;
   }
 

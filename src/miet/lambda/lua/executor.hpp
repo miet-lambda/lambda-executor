@@ -21,6 +21,6 @@ class Executor final : public ExecutorBase {
 
  private:
   class Impl;
-  userver::utils::FastPimpl<Impl, 320, 8> impl_;
+  userver::utils::FastPimpl<Impl, 400, 8> impl_;
 };
 }  // namespace miet::lambda::lua

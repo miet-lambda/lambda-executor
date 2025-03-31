@@ -6,19 +6,18 @@
 
 namespace miet::lambda::lua {
 using LuaContextRef = userver::utils::SharedRef<LuaCpp::LuaContext>;
-using LuaContextWeakPtr = std::weak_ptr<LuaCpp::LuaContext>;
+using LuaEnvWeakPtr = std::weak_ptr<LuaCpp::LuaEnvironment>;
 
 class HttpContext final : public LuaCpp::LuaMetaObject {
  public:
-  HttpContext(LuaContextWeakPtr luaContext,
-              ExecutionContextRef executionContext);
+  HttpContext(LuaEnvWeakPtr luaEnv, ExecutionContextRef executionContext);
 
   void PopulateResponse();
 
   std::shared_ptr<LuaCpp::Engine::LuaType> getValue(std::string& key) override;
 
  private:
-  LuaContextWeakPtr luaContext_;
+  LuaEnvWeakPtr luaEnv_;
   ExecutionContextRef executionContext_;
   std::shared_ptr<LuaCpp::Engine::LuaType> getRequestMethod_;
   std::shared_ptr<LuaCpp::Engine::LuaType> getResponseMethod_;

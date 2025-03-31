@@ -3,6 +3,9 @@
 #include <miet/lambda/lua/http-client.hpp>
 #include <miet/lambda/lua/http-context.hpp>
 
+#include <userver/concurrent/variable.hpp>
+#include <userver/engine/shared_mutex.hpp>
+
 #include <LuaCpp/LuaCpp.hpp>
 
 #include <unordered_set>
@@ -19,27 +22,41 @@ class Executor::Impl {
         luaContext_(userver::utils::MakeSharedRef<LuaCpp::LuaContext>()) {}
 
   void Execute(std::string_view id, ExecutionContextRef context) {
-    if (!idsOfCompiledStripts_.contains(id.data())) {
-      const auto scriptSource = fetcher_->Fetch(id);
-      luaContext_->CompileString(id.data(), scriptSource);
-      idsOfCompiledStripts_.insert(id.data());
+    bool compiled = false;
+    {
+      const auto lock = idsOfCompiledStripts_.SharedLock();
+      compiled = lock->contains(id.data());
     }
-    const auto httpContext =
-        std::make_shared<HttpContext>(luaContext_.GetBase(), context);
-    luaContext_->AddGlobalVariable(kHttpContextVariableName, httpContext);
+    if (!compiled) [[likely]] {
+      const auto scriptSource = fetcher_->Fetch(id);
+      auto lock = idsOfCompiledStripts_.Lock();
+      if (!lock->contains(id.data())) {
+        luaContext_->CompileString(id.data(), scriptSource);
+        lock->insert(id.data());
+      }
+    }
+
+    const auto luaEnv = std::make_shared<LuaCpp::LuaEnvironment>();
+
+    const auto httpContext = std::make_shared<HttpContext>(luaEnv, context);
+    luaEnv->emplace(kHttpContextVariableName, httpContext);
     if (deps_.httpClient) {
       const auto httpClient = std::make_shared<HttpClient>(deps_.httpClient);
-      luaContext_->AddGlobalVariable(kHttpClientVariableName, httpClient);
+      luaEnv->emplace(kHttpClientVariableName, httpClient);
     }
-    luaContext_->Run(id.data());
+    luaContext_->RunWithEnvironment(id.data(), *luaEnv);
     httpContext->PopulateResponse();
   }
 
  private:
+  using SafeIdsSet =
+      userver::concurrent::Variable<std::unordered_set<std::string>,
+                                    userver::engine::SharedMutex>;
+
   ScriptsFetcherPtr fetcher_;
   Dependencies deps_;
   LuaContextRef luaContext_;
-  std::unordered_set<std::string> idsOfCompiledStripts_;
+  SafeIdsSet idsOfCompiledStripts_;
 };
 
 Executor::Executor(ScriptsFetcherPtr fetcher, Dependencies deps)
