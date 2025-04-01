@@ -92,3 +92,29 @@ async def test_execute_lambda_json(service_client):
     assert response.json()['status'] == 400
     body = json.loads(response.json()['body'])
     assert body['message'] == 'Expected name field'
+
+
+@pytest.mark.pgsql('main-db', files=['scripts.sql'])
+async def test_execute_lambda_http_client(service_client, mockserver):
+    @mockserver.json_handler('/users/data')
+    def mock_external_service(request):
+        assert request.headers['Authorization'] == 'basic'
+        assert request.json['login'] == 'test'
+        assert request.json['password'] == 'password'
+        return {
+            'name': 'Test',
+            'age': 18,
+        }
+
+    response = await service_client.post(
+        '/v1/execute/lambda/5',  # /v1/test/http/client
+        json={
+            'method': 'GET',
+            'url': '/v1/test/http/client'
+        }
+    )
+    assert response.status == 200
+    assert response.json()['status'] == 200, response.json()
+    body = json.loads(response.json()['body'])
+    assert body['name'] == 'Test'
+    assert body['age'] == 18

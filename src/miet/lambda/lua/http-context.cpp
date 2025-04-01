@@ -126,25 +126,24 @@ static http::Response PopulateNativeResponseFrom(
   return response;
 }
 
-HttpContext::HttpContext(LuaContextWeakPtr luaContext,
+HttpContext::HttpContext(LuaEnvWeakPtr luaEnv,
                          ExecutionContextRef executionContext)
-    : luaContext_(std::move(luaContext)),
+    : luaEnv_(std::move(luaEnv)),
       executionContext_(std::move(executionContext)) {
   auto luaRequest =
       PopulateLuaRequestFrom(std::move(executionContext_->GetRequest()));
   auto luaResponse =
       PopulateLuaResponseFrom(std::move(executionContext_->GetResponse()));
 
-  const auto lock = luaContext_.lock();
-  lock->AddGlobalVariable(kRequestVariableName, std::move(luaRequest));
-  lock->AddGlobalVariable(kResponseVariableName, std::move(luaResponse));
+  const auto lock = luaEnv_.lock();
+  lock->emplace(kRequestVariableName, std::move(luaRequest));
+  lock->emplace(kResponseVariableName, std::move(luaResponse));
   getRequestMethod_ = std::make_shared<AccessMethod>(kRequestVariableName);
   getResponseMethod_ = std::make_shared<AccessMethod>(kResponseVariableName);
 }
 
 void HttpContext::PopulateResponse() {
-  const auto luaResponse =
-      luaContext_.lock()->getGlobalVariable(kResponseVariableName);
+  const auto luaResponse = luaEnv_.lock()->at(kResponseVariableName);
   executionContext_->GetResponse() = PopulateNativeResponseFrom(
       utils::GetValueStrict<LuaCpp::Engine::LuaTTable>(luaResponse));
 }

@@ -47,7 +47,6 @@ components_manager:
         dns-client:
             fs-task-processor: fs-task-processor
         http-client:
-            load-enabled: $is-testing
             user-agent: $user-agent
             fs-task-processor: fs-task-processor
         

@@ -25,6 +25,8 @@ add_library(${PROJECT_NAME}-objs OBJECT
 
     src/miet/lambda/http.hpp
     src/miet/lambda/http.cpp
+    src/miet/lambda/http-client.hpp
+    src/miet/lambda/http-client.cpp
     src/miet/lambda/execution-context.hpp
     src/miet/lambda/execution-context.cpp
     src/miet/lambda/components/executor.hpp
@@ -37,6 +39,8 @@ add_library(${PROJECT_NAME}-objs OBJECT
     src/miet/lambda/lua/executor.cpp
     src/miet/lambda/lua/http-context.hpp
     src/miet/lambda/lua/http-context.cpp
+    src/miet/lambda/lua/http-client.hpp
+    src/miet/lambda/lua/http-client.cpp
 
     src/miet/lambda/handlers/execute-lambda.hpp
     src/miet/lambda/handlers/execute-lambda.cpp
