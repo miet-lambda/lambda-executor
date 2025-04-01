@@ -2,6 +2,8 @@
 
 #include <miet/lambda/testutils/utils.hpp>
 
+#include <userver/formats/json/schema.hpp>
+#include <userver/formats/json/serialize.hpp>
 #include <userver/http/common_headers.hpp>
 #include <userver/utest/utest.hpp>
 
