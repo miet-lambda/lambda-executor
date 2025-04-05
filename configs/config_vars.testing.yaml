@@ -15,3 +15,6 @@ user-agent: lambda-executor 0.0.1
 executor-language-type: lua
 
 dbconnection: 'postgresql://testsuite@localhost:15433/lambda-executor_main-db'
+
+machine-hostname: lambda.miet.ru
+executor-port: 8080

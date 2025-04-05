@@ -31,6 +31,8 @@ add_library(${PROJECT_NAME}-objs OBJECT
     src/miet/lambda/execution-context.cpp
     src/miet/lambda/components/executor.hpp
     src/miet/lambda/components/executor.cpp
+    src/miet/lambda/components/instance-registrator.hpp
+    src/miet/lambda/components/instance-registrator.cpp
     src/miet/lambda/fetchers/db-fetcher.hpp
     src/miet/lambda/fetchers/db-fetcher.cpp
 
