@@ -257,6 +257,52 @@ UTEST_F(TestLuaExecutor, HttpClientRequest) {
   ASSERT_EQ(requestWithParams->GetBody(), "Hello, world!");
 }
 
+UTEST_F(TestLuaExecutor, HttpClientRequestTableBody) {
+  EXPECT_CALL(*fetcher_, Fetch("http-client-request-table-body"))
+      .WillOnce(::testing::Return(R"(
+    local client = require('miet.http.client').get()
+
+    local response, err = client:get('http://localhost:80/v1/hello', {
+      body = {
+        name = 'Test',
+        age = 18,
+        is_male = true,
+        extra = {
+          float_number = 3.141516,
+          string_value = 'string',
+          some_array = { 2, 'imposter', 6 }
+        }
+      }
+    })
+    if err ~= nil then
+      error('Can\'t send request: ' .. err)
+    end
+  )"));
+
+  userver::formats::json::Value body;
+
+  EXPECT_CALL(*httpClient_, Send(::testing::_))
+      .WillOnce([&](const http::Request& request) -> http::Response {
+        body = userver::formats::json::FromString(request.GetBody());
+        return {};
+      });
+
+  const auto context = userver::utils::MakeSharedRef<ExecutionContext>(
+      http::Request::Default(), http::Response::Default());
+  ASSERT_NO_THROW(
+      executor_->Execute("http-client-request-table-body", context));
+
+  ASSERT_EQ(body["name"].As<std::string>(), "Test");
+  ASSERT_EQ(body["age"].As<std::uint64_t>(), 18ull);
+  ASSERT_EQ(body["is_male"].As<bool>(), true);
+  ASSERT_EQ(body["extra"]["float_number"].As<double>(), 3.141516);
+  ASSERT_EQ(body["extra"]["string_value"].As<std::string>(), "string");
+  ASSERT_EQ(body["extra"]["some_array"].GetSize(), 3);
+  ASSERT_EQ(body["extra"]["some_array"][0].As<std::uint64_t>(), 2ull);
+  ASSERT_EQ(body["extra"]["some_array"][1].As<std::string>(), "imposter");
+  ASSERT_EQ(body["extra"]["some_array"][2].As<std::uint64_t>(), 6ull);
+}
+
 UTEST_F(TestLuaExecutor, HttpClientResponse) {
   EXPECT_CALL(*fetcher_, Fetch("http-client-response"))
       .WillOnce(::testing::Return(R"(
