@@ -99,6 +99,12 @@ components_manager:
             language-type: $executor-language-type
             language-type#env: EXECUTOR_LANGUAGE_TYPE
 
+        instance-registrator:
+            hostname: $machine-hostname
+            hostname#env: MACHINE_HOSTNAME
+            port: $executor-port
+            port#env: EXECUTOR_PORT
+
         main-db:
             dbconnection: $dbconnection
             dbconnection#env: DB_CONNECTION
