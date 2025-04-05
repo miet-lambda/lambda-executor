@@ -37,6 +37,7 @@ add_library(${PROJECT_NAME}-objs OBJECT
     src/miet/lambda/fetchers/db-fetcher.cpp
 
     src/miet/lambda/lua/utils.hpp
+    src/miet/lambda/lua/utils.cpp
     src/miet/lambda/lua/executor.hpp
     src/miet/lambda/lua/executor.cpp
     src/miet/lambda/lua/http-context.hpp

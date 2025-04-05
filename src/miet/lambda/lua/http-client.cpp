@@ -1,5 +1,7 @@
 #include <miet/lambda/lua/http-client.hpp>
 
+#include <miet/lambda/lua/utils.hpp>
+
 #include <userver/logging/log.hpp>
 
 namespace miet::lambda::lua {
@@ -162,20 +164,16 @@ class HttpClientMethod final : public LuaCpp::LuaMetaObject {
   std::optional<int> PopulateBody(LuaCpp::Engine::LuaState& L,
                                   std::int32_t luaType, std::string& body) {
     if (luaType != LUA_TSTRING && luaType != LUA_TNUMBER &&
-        luaType != LUA_TTABLE) {
+        luaType != LUA_TTABLE && luaType != LUA_TBOOLEAN) {
       return luaL_error(L,
                         "One of these types is expected for the body (string, "
-                        "number, table), actual = %s",
+                        "number, table, boolean), actual = %s",
                         lua_typename(L, luaType));
     }
-
-    /** @todo support table types */
-    if (luaType == LUA_TTABLE) {
-      return luaL_error(L, "Table type of body unsupported yet");
-    }
-    if (luaType == LUA_TSTRING || luaType == LUA_TNUMBER) {
-      body = lua_tostring(L, -1);
-      return std::nullopt;
+    try {
+      body = utils::Serializer::ToString(L);
+    } catch (const std::exception& ex) {
+      return luaL_error(L, ex.what());
     }
     return std::nullopt;
   }
