@@ -118,3 +118,20 @@ async def test_execute_lambda_http_client(service_client, mockserver):
     body = json.loads(response.json()['body'])
     assert body['name'] == 'Test'
     assert body['age'] == 18
+
+
+@pytest.mark.pgsql('main-db', files=['scripts.sql'])
+async def test_execute_lambda_kv_storage(service_client):
+    response = await service_client.post(
+        '/v1/execute/lambda/6',  # /v1/test/kv/storage
+        json={
+            'method': 'GET',
+            'url': '/v1/test/kv/storage'
+        }
+    )
+    assert response.status == 200
+    assert response.json()['status'] == 200, response.json()
+    body = json.loads(response.json()['body'])
+    assert body['name'] == 'Test'
+    assert body['age'] == 18
+    assert body['marks'] == [4, 4, 5]

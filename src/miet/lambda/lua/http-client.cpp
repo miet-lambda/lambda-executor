@@ -18,7 +18,7 @@ class HttpClientMethod final : public LuaCpp::LuaMetaObject {
       return luaL_error(L,
                         "Invalid arguments count (expected 2 or 3 (method, "
                         "url, [params]), provided %d)",
-                        n);
+                        n - 2);
     }
     /** @note Check 'method' type */
     if (!lua_isstring(L, 3)) {

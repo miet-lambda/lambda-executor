@@ -1,5 +1,7 @@
 #include <miet/lambda/lua/utils.hpp>
 
+#include <boost/lexical_cast.hpp>
+
 #include <fmt/format.h>
 
 namespace miet::lambda::lua::utils {
@@ -75,5 +77,91 @@ userver::formats::json::ValueBuilder Serializer::LuaTableToValue(
     lua_pop(L, 1);
   }
   return builder;
+}
+
+static void PushString(LuaCpp::Engine::LuaState& L, std::string_view value) {
+  lua_pushstring(L, value.data());
+}
+
+static void PushNumber(LuaCpp::Engine::LuaState& L, std::string_view value) {
+  lua_pushnumber(L, boost::lexical_cast<double>(value));
+}
+
+static void PushBoolean(LuaCpp::Engine::LuaState& L, std::string_view value) {
+  lua_pushboolean(L, (value == "true"));
+}
+
+static Type GetType(const userver::formats::json::Value& value) {
+  if (value.IsBool()) {
+    return Type::Boolean;
+  } else if (value.IsInt() || value.IsInt64() || value.IsUInt64() ||
+             value.IsDouble()) {
+    return Type::Number;
+  } else if (value.IsString()) {
+    return Type::String;
+  } else if (value.IsObject() || value.IsArray()) {
+    return Type::Table;
+  }
+  throw std::runtime_error("Unexpected json value type");
+}
+
+static void PushValue(LuaCpp::Engine::LuaState& L,
+                      const userver::formats::json::Value& value) {
+  const auto type = GetType(value);
+  try {
+    if (value.IsString()) {
+      Deserializer::FromString(L, type, value.As<std::string>());
+    } else {
+      const auto stringValue = userver::formats::json::ToString(value);
+      Deserializer::FromString(L, type, stringValue);
+    }
+  } catch (...) {
+    lua_pop(L, 2);
+    throw;
+  }
+}
+
+static void PushTable(LuaCpp::Engine::LuaState& L, std::string_view value) {
+  const auto json = userver::formats::json::FromString(value);
+  lua_newtable(L);
+  if (json.IsObject()) {
+    for (const auto& [key, value] : userver::formats::json::Items(json)) {
+      lua_pushstring(L, key.c_str());
+      PushValue(L, value);
+      lua_settable(L, -3);
+    }
+    return;
+  } else if (json.IsArray()) {
+    std::size_t i = 1;
+    for (const auto& value : json) {
+      lua_pushnumber(L, i);
+      PushValue(L, value);
+      lua_settable(L, -3);
+      ++i;
+    }
+    return;
+  }
+  lua_pop(L, 1);
+  throw std::runtime_error("Value is not a table");
+}
+
+void Deserializer::FromString(LuaCpp::Engine::LuaState& L, Type type,
+                              std::string_view value) {
+  switch (type) {
+    case Type::String:
+      PushString(L, value);
+      break;
+    case Type::Number:
+      PushNumber(L, value);
+      break;
+    case Type::Boolean:
+      PushBoolean(L, value);
+      break;
+    case Type::Table:
+      PushTable(L, value);
+      break;
+    default:
+      throw std::runtime_error("Unknow lua deserialization type");
+  }
 }
 }  // namespace miet::lambda::lua::utils

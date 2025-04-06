@@ -150,4 +150,34 @@ INSERT INTO scripts (id, path, parent_project_id, source_code) VALUES
   end
 
   outgoing_response["body"] = response["body"]
+'),
+(6, '/v1/test/kv/storage', 1,
+'
+  local context = require("miet.http.context").get()
+  local storage = require("miet.kv.storage").get()
+
+  local incoming_request = context:request()
+  local outgoing_response = context:response()
+
+  local store_info = {
+    name = "Test",
+    age = 18,
+    marks = { 4, 4, 5 }
+  }
+
+  local err = storage:store("info", store_info)
+  if err ~= nil then
+    outgoing_response["status"] = 500
+    outgoing_response["body"] = err
+    return
+  end
+
+  local restored_info, err = storage:get("info"):as_table()
+  if err ~= nil then
+    outgoing_response["status"] = 500
+    outgoing_response["body"] = err
+    return
+  end
+
+  outgoing_response["body"] = restored_info
 ');

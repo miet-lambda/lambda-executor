@@ -68,4 +68,14 @@ class Serializer final {
       LuaCpp::Engine::LuaState& L, std::optional<std::size_t> idx);
 };
 
+enum class Type : uint8_t { String, Number, Boolean, Table };
+
+/**
+ * @brief Deserialize value from string
+ *        and push the result onto the Lua stack */
+class Deserializer final {
+ public:
+  static void FromString(LuaCpp::Engine::LuaState& L, Type type,
+                         std::string_view value);
+};
 }  // namespace miet::lambda::lua::utils

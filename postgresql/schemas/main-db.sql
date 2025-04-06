@@ -27,3 +27,11 @@ CREATE TABLE scripts (
     source_code TEXT NOT NULL,
     FOREIGN KEY (parent_project_id) REFERENCES projects(id) ON DELETE CASCADE
 );
+
+CREATE TABLE projects_kv_storage (
+    project_id INT NOT NULL,
+    key VARCHAR(255) NOT NULL,
+    value TEXT NOT NULL,
+    PRIMARY KEY (project_id, key),
+    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);

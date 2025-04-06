@@ -9,13 +9,13 @@ DBScriptsFetcher::DBScriptsFetcher(
     userver::storages::postgres::ClusterPtr cluster) noexcept
     : cluster_(std::move(cluster)) {}
 
-std::string DBScriptsFetcher::Fetch(std::string_view id) {
+ScriptInfo DBScriptsFetcher::Fetch(std::string_view id) {
   const auto result = cluster_->Execute(
       userver::storages::postgres::ClusterHostTypeFlags{
           userver::storages::postgres::ClusterHostType::kSlaveOrMaster,
       },
       R"(
-    SELECT source_code FROM scripts
+    SELECT parent_project_id, source_code FROM scripts
     WHERE id = $1
   )",
       std::stoi(id.data()));
@@ -23,6 +23,7 @@ std::string DBScriptsFetcher::Fetch(std::string_view id) {
     throw NotFoundScriptError(
         fmt::format("No script with such id (id = {})", id));
   }
-  return result.Back()["source_code"].As<std::string>();
+  return {.projectId = result.Back()["parent_project_id"].As<std::int64_t>(),
+          .sourceCode = result.Back()["source_code"].As<std::string>()};
 }
 }  // namespace miet::lambda
