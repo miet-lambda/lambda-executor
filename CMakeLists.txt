@@ -27,6 +27,8 @@ add_library(${PROJECT_NAME}-objs OBJECT
     src/miet/lambda/http.cpp
     src/miet/lambda/http-client.hpp
     src/miet/lambda/http-client.cpp
+    src/miet/lambda/timeout-checker.hpp
+    src/miet/lambda/timeout-checker.cpp
     src/miet/lambda/key-value-storage.hpp
     src/miet/lambda/key-value-storage.cpp
     src/miet/lambda/execution-context.hpp

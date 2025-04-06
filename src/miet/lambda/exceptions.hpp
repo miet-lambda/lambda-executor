@@ -18,4 +18,8 @@ struct CompilationError final : public InternalError {
 struct ExecutionError final : public InternalError {
   using InternalError::InternalError;
 };
+
+struct ExecutionTimout final : public InternalError {
+  using InternalError::InternalError;
+};
 }  // namespace miet::lambda

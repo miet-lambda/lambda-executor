@@ -10,6 +10,8 @@
 #include <userver/logging/log.hpp>
 #include <userver/server/handlers/exceptions.hpp>
 
+constexpr auto kDefaultExecutionTimeout = std::chrono::seconds(1);
+
 namespace miet::lambda::handlers {
 ExecuteLambda::ExecuteLambda(
     const userver::components::ComponentConfig& config,
@@ -40,8 +42,15 @@ std::string ExecuteLambda::HandleRequestThrow(
   const auto executionContext = userver::utils::MakeSharedRef<ExecutionContext>(
       std::move(scriptRequest), http::Response::Default());
 
+  executionContext->GetOptions().timeout = kDefaultExecutionTimeout;
+
   try {
     executor_->Execute(scriptId, executionContext);
+  } catch (const ExecutionTimout& ex) {
+    LOG_WARNING() << "Execution expired: " << ex.what();
+    request.GetHttpResponse().SetStatus(
+        userver::server::http::HttpStatus::kRequestTimeout);
+    return {};
   } catch (const NotFoundScriptError& ex) {
     LOG_WARNING() << "Can't find script: " << ex.what();
     throw userver::server::handlers::ResourceNotFound();
