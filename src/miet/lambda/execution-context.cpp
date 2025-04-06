@@ -13,7 +13,13 @@ const http::Response& ExecutionContext::GetResponse() const noexcept {
   return response_;
 }
 
+const ExecuteOptions& ExecutionContext::GetOptions() const noexcept {
+  return options_;
+}
+
 http::Request& ExecutionContext::GetRequest() noexcept { return request_; }
 
 http::Response& ExecutionContext::GetResponse() noexcept { return response_; }
+
+ExecuteOptions& ExecutionContext::GetOptions() noexcept { return options_; }
 }  // namespace miet::lambda

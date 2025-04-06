@@ -1,8 +1,11 @@
 #include <miet/lambda/lua/executor.hpp>
 
+#include <miet/lambda/exceptions.hpp>
+
 #include <miet/lambda/testutils/mocks/http-client.hpp>
 #include <miet/lambda/testutils/mocks/key-value-storage.hpp>
 #include <miet/lambda/testutils/mocks/scripts-fetcher.hpp>
+#include <miet/lambda/testutils/mocks/timeout-checker.hpp>
 #include <miet/lambda/testutils/utils.hpp>
 
 #include <userver/formats/json/schema.hpp>
@@ -20,15 +23,26 @@ class TestLuaExecutor : public testing::Test {
 
   void SetUp() override {
     fetcher_ = std::make_shared<ScriptsFetcherMock>();
+    checker_ = std::make_shared<TimeoutCheckerMock>();
+    checkersFactory_ = std::make_shared<TimeoutCheckersFactoryMock>();
     httpClient_ = std::make_shared<HttpClientMock>();
     kvStorage_ = std::make_shared<KeyValueStorageMock>();
     executor_ = std::make_shared<lua::Executor>(
-        fetcher_,
+        fetcher_, checkersFactory_,
         lua::Dependencies{.httpClient = httpClient_, .kvStorage = kvStorage_});
+
+    EXPECT_CALL(*checker_, Start()).WillRepeatedly(::testing::DoDefault());
+    EXPECT_CALL(*checker_, IsExpired())
+        .WillRepeatedly(::testing::Return(false));
+
+    EXPECT_CALL(*checkersFactory_, CreateChecker(::testing::_))
+        .WillRepeatedly(::testing::Return(checker_));
   }
 
  protected:
   std::shared_ptr<ScriptsFetcherMock> fetcher_ = nullptr;
+  std::shared_ptr<TimeoutCheckerMock> checker_ = nullptr;
+  std::shared_ptr<TimeoutCheckersFactoryMock> checkersFactory_ = nullptr;
   std::shared_ptr<HttpClientMock> httpClient_ = nullptr;
   std::shared_ptr<KeyValueStorageMock> kvStorage_ = nullptr;
   std::shared_ptr<lua::Executor> executor_ = nullptr;
@@ -545,4 +559,38 @@ UTEST_F(TestLuaExecutor, KvStorageGetError) {
   const auto context = userver::utils::MakeSharedRef<ExecutionContext>(
       http::Request::Default(), http::Response::Default());
   ASSERT_NO_THROW(executor_->Execute("kv-storage-get-error", context));
+}
+
+UTEST_F(TestLuaExecutor, TimeoutError) {
+  constexpr auto kChecksLimit = 5;
+
+  EXPECT_CALL(*fetcher_, Fetch("timeout-error"))
+      .WillOnce(::testing::Return(
+          ScriptInfo{.projectId = kTestProjectId, .sourceCode = R"(
+      local context = require('miet.http.context').get()
+
+      local response = context:response()
+
+      local iteration = 0
+      while true do
+        response['body'] = iteration
+        iteration = iteration + 1
+      end
+  )"}));
+
+  std::int64_t currentCheck = 0;
+
+  EXPECT_CALL(*checker_, IsExpired()).WillRepeatedly([&currentCheck]() -> bool {
+    if (currentCheck < kChecksLimit) {
+      currentCheck++;
+      return false;
+    }
+    return true;
+  });
+
+  const auto context = userver::utils::MakeSharedRef<ExecutionContext>(
+      http::Request::Default(), http::Response::Default());
+  ASSERT_THROW(executor_->Execute("timeout-error", context), ExecutionTimout);
+
+  ASSERT_EQ(currentCheck, kChecksLimit);
 }
