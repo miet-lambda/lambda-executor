@@ -2,6 +2,7 @@
 
 #include <miet/lambda/base/executor.hpp>
 #include <miet/lambda/base/http-client.hpp>
+#include <miet/lambda/base/key-value-storage.hpp>
 #include <miet/lambda/base/scripts-fetcher.hpp>
 #include <miet/lambda/execution-context.hpp>
 
@@ -10,6 +11,7 @@
 namespace miet::lambda::lua {
 struct Dependencies final {
   HttpClientPtr httpClient = nullptr;
+  KeyValueStoragePtr kvStorage = nullptr;
 };
 
 class Executor final : public ExecutorBase {
@@ -21,6 +23,6 @@ class Executor final : public ExecutorBase {
 
  private:
   class Impl;
-  userver::utils::FastPimpl<Impl, 400, 8> impl_;
+  userver::utils::FastPimpl<Impl, 416, 8> impl_;
 };
 }  // namespace miet::lambda::lua

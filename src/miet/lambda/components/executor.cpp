@@ -2,6 +2,7 @@
 
 #include <miet/lambda/fetchers/db-fetcher.hpp>
 #include <miet/lambda/http-client.hpp>
+#include <miet/lambda/key-value-storage.hpp>
 #include <miet/lambda/lua/executor.hpp>
 
 #include <userver/clients/http/component.hpp>
@@ -18,17 +19,19 @@ Executor::Executor(const userver::components::ComponentConfig& config,
     : ComponentBase(config, context) {
   const auto type = config["language-type"].As<std::string>();
   if (type == kLua) {
-    auto cluster =
+    const auto cluster =
         context.FindComponent<userver::components::Postgres>("main-db")
             .GetCluster();
-    auto fetcher = std::make_shared<DBScriptsFetcher>(std::move(cluster));
+    auto fetcher = std::make_shared<DBScriptsFetcher>(cluster);
     auto& nativeClient =
         context.FindComponent<userver::components::HttpClient>()
             .GetHttpClient();
     auto httpClient = std::make_shared<http::Client>(nativeClient);
-    executor_ = std::make_shared<miet::lambda::lua::Executor>(
+    auto storage = std::make_shared<KeyValueStorage>(cluster);
+    executor_ = std::make_shared<lua::Executor>(
         std::move(fetcher),
-        lua::Dependencies{.httpClient = std::move(httpClient)});
+        lua::Dependencies{.httpClient = std::move(httpClient),
+                          .kvStorage = std::move(storage)});
   } else {
     throw std::runtime_error("Unexpected executor type");
   }

@@ -2,17 +2,19 @@
 
 #include <miet/lambda/lua/http-client.hpp>
 #include <miet/lambda/lua/http-context.hpp>
+#include <miet/lambda/lua/storage.hpp>
 
 #include <userver/concurrent/variable.hpp>
 #include <userver/engine/shared_mutex.hpp>
 
 #include <LuaCpp/LuaCpp.hpp>
 
-#include <unordered_set>
+#include <unordered_map>
 
 namespace miet::lambda::lua {
 constexpr auto kHttpContextVariableName = "miet_http_context";
 constexpr auto kHttpClientVariableName = "miet_http_client";
+constexpr auto kStorageVariableName = "miet_kv_storage";
 
 class Executor::Impl {
  public:
@@ -22,18 +24,22 @@ class Executor::Impl {
         luaContext_(userver::utils::MakeSharedRef<LuaCpp::LuaContext>()) {}
 
   void Execute(std::string_view id, ExecutionContextRef context) {
-    bool compiled = false;
+    std::optional<std::int64_t> projectIdOpt;
     {
-      const auto lock = idsOfCompiledStripts_.SharedLock();
-      compiled = lock->contains(id.data());
+      const auto lock = compiledStripts_.SharedLock();
+      const auto it = lock->find(id.data());
+      if (it != lock->cend()) {
+        projectIdOpt = it->second;
+      }
     }
-    if (!compiled) [[likely]] {
-      const auto scriptSource = fetcher_->Fetch(id);
-      auto lock = idsOfCompiledStripts_.Lock();
+    if (!projectIdOpt) [[likely]] {
+      const auto [projectId, scriptSource] = fetcher_->Fetch(id);
+      auto lock = compiledStripts_.Lock();
       if (!lock->contains(id.data())) {
         luaContext_->CompileString(id.data(), scriptSource);
-        lock->insert(id.data());
+        lock->emplace(id.data(), projectId);
       }
+      projectIdOpt = projectId;
     }
 
     const auto luaEnv = std::make_shared<LuaCpp::LuaEnvironment>();
@@ -44,19 +50,25 @@ class Executor::Impl {
       const auto httpClient = std::make_shared<HttpClient>(deps_.httpClient);
       luaEnv->emplace(kHttpClientVariableName, httpClient);
     }
+    if (deps_.kvStorage) {
+      UINVARIANT(projectIdOpt, "Project ID is nullopt");
+      const auto storage =
+          std::make_shared<Storage>(*projectIdOpt, deps_.kvStorage);
+      luaEnv->emplace(kStorageVariableName, storage);
+    }
     luaContext_->RunWithEnvironment(id.data(), *luaEnv);
     httpContext->PopulateResponse();
   }
 
  private:
-  using SafeIdsSet =
-      userver::concurrent::Variable<std::unordered_set<std::string>,
-                                    userver::engine::SharedMutex>;
+  using ScriptsMap = userver::concurrent::Variable<
+      std::unordered_map<std::string, std::int64_t>,
+      userver::engine::SharedMutex>;
 
   ScriptsFetcherPtr fetcher_;
   Dependencies deps_;
   LuaContextRef luaContext_;
-  SafeIdsSet idsOfCompiledStripts_;
+  ScriptsMap compiledStripts_;
 };
 
 Executor::Executor(ScriptsFetcherPtr fetcher, Dependencies deps)

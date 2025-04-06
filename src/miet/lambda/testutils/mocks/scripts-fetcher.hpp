@@ -7,6 +7,6 @@
 namespace miet::lambda {
 class ScriptsFetcherMock final : public ScriptsFetcherBase {
  public:
-  MOCK_METHOD(std::string, Fetch, (std::string_view));
+  MOCK_METHOD(ScriptInfo, Fetch, (std::string_view));
 };
 }  // namespace miet::lambda

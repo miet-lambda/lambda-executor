@@ -1,11 +1,13 @@
 #include <miet/lambda/lua/executor.hpp>
 
 #include <miet/lambda/testutils/mocks/http-client.hpp>
+#include <miet/lambda/testutils/mocks/key-value-storage.hpp>
 #include <miet/lambda/testutils/mocks/scripts-fetcher.hpp>
 #include <miet/lambda/testutils/utils.hpp>
 
 #include <userver/formats/json/schema.hpp>
 #include <userver/formats/json/serialize.hpp>
+#include <userver/formats/json/value_builder.hpp>
 #include <userver/http/common_headers.hpp>
 #include <userver/http/content_type.hpp>
 #include <userver/utest/utest.hpp>
@@ -14,22 +16,28 @@ using namespace miet::lambda;
 
 class TestLuaExecutor : public testing::Test {
  protected:
+  static constexpr auto kTestProjectId = 1;
+
   void SetUp() override {
     fetcher_ = std::make_shared<ScriptsFetcherMock>();
     httpClient_ = std::make_shared<HttpClientMock>();
+    kvStorage_ = std::make_shared<KeyValueStorageMock>();
     executor_ = std::make_shared<lua::Executor>(
-        fetcher_, lua::Dependencies{.httpClient = httpClient_});
+        fetcher_,
+        lua::Dependencies{.httpClient = httpClient_, .kvStorage = kvStorage_});
   }
 
  protected:
   std::shared_ptr<ScriptsFetcherMock> fetcher_ = nullptr;
   std::shared_ptr<HttpClientMock> httpClient_ = nullptr;
+  std::shared_ptr<KeyValueStorageMock> kvStorage_ = nullptr;
   std::shared_ptr<lua::Executor> executor_ = nullptr;
 };
 
 UTEST_F(TestLuaExecutor, WithoutContext) {
   EXPECT_CALL(*fetcher_, Fetch("without-context"))
-      .WillOnce(::testing::Return(R"(
+      .WillOnce(::testing::Return(
+          ScriptInfo{.projectId = kTestProjectId, .sourceCode = R"(
     function my_sum(a, b)
       return a + b
     end
@@ -42,7 +50,7 @@ UTEST_F(TestLuaExecutor, WithoutContext) {
     if total_sum ~= 55 then
       error('Invalid sum expected 55')
     end
-  )"));
+  )"}));
 
   const auto context = userver::utils::MakeSharedRef<ExecutionContext>(
       http::Request::Default(), http::Response::Default());
@@ -51,7 +59,8 @@ UTEST_F(TestLuaExecutor, WithoutContext) {
 
 UTEST_F(TestLuaExecutor, JsonEncodeDecode) {
   EXPECT_CALL(*fetcher_, Fetch("json-encode-decode"))
-      .WillOnce(::testing::Return(R"(
+      .WillOnce(::testing::Return(
+          ScriptInfo{.projectId = kTestProjectId, .sourceCode = R"(
     local json = require("dkjson")
 
     local data = {
@@ -70,7 +79,7 @@ UTEST_F(TestLuaExecutor, JsonEncodeDecode) {
     for key, value in pairs(decoded_data) do
         --- some operations
     end
-  )"));
+  )"}));
 
   const auto context = userver::utils::MakeSharedRef<ExecutionContext>(
       http::Request::Default(), http::Response::Default());
@@ -79,7 +88,8 @@ UTEST_F(TestLuaExecutor, JsonEncodeDecode) {
 
 UTEST_F(TestLuaExecutor, IncomingRequest) {
   EXPECT_CALL(*fetcher_, Fetch("incoming-request"))
-      .WillOnce(::testing::Return(R"(
+      .WillOnce(::testing::Return(
+          ScriptInfo{.projectId = kTestProjectId, .sourceCode = R"(
     local context = require('miet.http.context').get()
 
     local request = context:request()
@@ -105,7 +115,7 @@ UTEST_F(TestLuaExecutor, IncomingRequest) {
     if request['body'] ~= 'some-data' then
       error('Incorrect body')
     end
-  )"));
+  )"}));
 
   constexpr auto kRequest = R"(
     {
@@ -131,7 +141,8 @@ UTEST_F(TestLuaExecutor, IncomingRequest) {
 
 UTEST_F(TestLuaExecutor, OutgoingResponse) {
   EXPECT_CALL(*fetcher_, Fetch("outgoing-response"))
-      .WillOnce(::testing::Return(R"(
+      .WillOnce(::testing::Return(
+          ScriptInfo{.projectId = kTestProjectId, .sourceCode = R"(
     local context = require('miet.http.context').get()
 
     local response = context:response()
@@ -145,7 +156,7 @@ UTEST_F(TestLuaExecutor, OutgoingResponse) {
       name = 'Alex',
       age = 18
     }
-  )"));
+  )"}));
 
   const auto context = userver::utils::MakeSharedRef<ExecutionContext>(
       http::Request::Default(), http::Response::Default());
@@ -169,7 +180,8 @@ UTEST_F(TestLuaExecutor, HttpClientSendError) {
   constexpr auto kSendErrorMessage = "Can't send request";
 
   EXPECT_CALL(*fetcher_, Fetch("http-client-send-error"))
-      .WillOnce(::testing::Return(R"(
+      .WillOnce(::testing::Return(
+          ScriptInfo{.projectId = kTestProjectId, .sourceCode = R"(
     local client = require('miet.http.client').get()
     local context = require('miet.http.context').get()
 
@@ -177,21 +189,16 @@ UTEST_F(TestLuaExecutor, HttpClientSendError) {
 
     local response, err = client:send('GET', 'http://localhost:80/v1/error')
     if response ~= nil or err == nil then
-      print(response)
       error('Expected send error')
     end
 
     outgoing_response['headers'] = {
       message = err
     }
-  )"));
+  )"}));
 
   EXPECT_CALL(*httpClient_, Send(::testing::_))
-      .WillOnce(
-          [&]([[maybe_unused]] const http::Request& request) -> http::Response {
-            throw std::runtime_error(kSendErrorMessage);
-            return {};
-          });
+      .WillOnce(::testing::Throw(std::runtime_error(kSendErrorMessage)));
 
   const auto context = userver::utils::MakeSharedRef<ExecutionContext>(
       http::Request::Default(), http::Response::Default());
@@ -204,7 +211,8 @@ UTEST_F(TestLuaExecutor, HttpClientSendError) {
 
 UTEST_F(TestLuaExecutor, HttpClientRequest) {
   EXPECT_CALL(*fetcher_, Fetch("http-client-request"))
-      .WillOnce(::testing::Return(R"(
+      .WillOnce(::testing::Return(
+          ScriptInfo{.projectId = kTestProjectId, .sourceCode = R"(
     local client = require('miet.http.client').get()
 
     local response, err = client:send('HEAD', 'http://localhost:80/v1/hello')
@@ -224,7 +232,7 @@ UTEST_F(TestLuaExecutor, HttpClientRequest) {
     if err ~= nil then
       error('Can\'t send request with additional params: ' .. err)
     end
-  )"));
+  )"}));
 
   std::shared_ptr<http::Request> requestWithoutParams = nullptr;
   std::shared_ptr<http::Request> requestWithParams = nullptr;
@@ -259,7 +267,8 @@ UTEST_F(TestLuaExecutor, HttpClientRequest) {
 
 UTEST_F(TestLuaExecutor, HttpClientRequestTableBody) {
   EXPECT_CALL(*fetcher_, Fetch("http-client-request-table-body"))
-      .WillOnce(::testing::Return(R"(
+      .WillOnce(::testing::Return(
+          ScriptInfo{.projectId = kTestProjectId, .sourceCode = R"(
     local client = require('miet.http.client').get()
 
     local response, err = client:get('http://localhost:80/v1/hello', {
@@ -277,7 +286,7 @@ UTEST_F(TestLuaExecutor, HttpClientRequestTableBody) {
     if err ~= nil then
       error('Can\'t send request: ' .. err)
     end
-  )"));
+  )"}));
 
   userver::formats::json::Value body;
 
@@ -305,7 +314,8 @@ UTEST_F(TestLuaExecutor, HttpClientRequestTableBody) {
 
 UTEST_F(TestLuaExecutor, HttpClientResponse) {
   EXPECT_CALL(*fetcher_, Fetch("http-client-response"))
-      .WillOnce(::testing::Return(R"(
+      .WillOnce(::testing::Return(
+          ScriptInfo{.projectId = kTestProjectId, .sourceCode = R"(
     local client = require('miet.http.client').get()
 
     local response, err = client:send('HEAD', 'http://localhost:80/v1/hello')
@@ -324,7 +334,7 @@ UTEST_F(TestLuaExecutor, HttpClientResponse) {
     if response['body'] ~= 'Hello, world!' then
       error('Incorrect body')
     end
-  )"));
+  )"}));
 
   EXPECT_CALL(*httpClient_, Send(::testing::_))
       .WillOnce(
@@ -348,11 +358,10 @@ UTEST_F(TestLuaExecutor, HttpClientResponse) {
 
 UTEST_F(TestLuaExecutor, HttpClientSendAliases) {
   EXPECT_CALL(*fetcher_, Fetch("http-client-send-aliases"))
-      .WillOnce(::testing::Return(R"(
+      .WillOnce(::testing::Return(
+          ScriptInfo{.projectId = kTestProjectId, .sourceCode = R"(
     local client = require('miet.http.client').get()
 
-    print(type(client))
-    print(client.get)
     local response, err = client:get('http://localhost:80/v1/hello')
     if err ~= nil then
       error('Can\'t send GET request: ' .. err)
@@ -364,7 +373,7 @@ UTEST_F(TestLuaExecutor, HttpClientSendAliases) {
     if err ~= nil then
       error('Can\'t send POST request: ' .. err)
     end
-  )"));
+  )"}));
 
   std::shared_ptr<http::Request::HttpMethod> getMethod = nullptr;
   std::shared_ptr<http::Request::HttpMethod> postMethod = nullptr;
@@ -388,4 +397,152 @@ UTEST_F(TestLuaExecutor, HttpClientSendAliases) {
 
   ASSERT_EQ(*getMethod, http::Request::HttpMethod::kGet);
   ASSERT_EQ(*postMethod, http::Request::HttpMethod::kPost);
+}
+
+UTEST_F(TestLuaExecutor, KvStorageStore) {
+  EXPECT_CALL(*fetcher_, Fetch("kv-storage-store"))
+      .WillOnce(::testing::Return(
+          ScriptInfo{.projectId = kTestProjectId, .sourceCode = R"(
+    local storage = require('miet.kv.storage').get()
+
+    local err = storage:store('name', 'Test')
+    if err ~= nil then
+      error('Not nil store error: ' .. err)
+    end
+    
+    storage:store('age', 18.5)
+    storage:store('is_male', false)
+    storage:store('extra', {
+      field1 = 'some_data',
+      field2 = { 1, 2, 3},
+      flag = true
+    })
+  )"}));
+
+  EXPECT_CALL(*kvStorage_, Store(kTestProjectId, ::testing::_, testing::_))
+      .Times(4)
+      .WillRepeatedly([]([[maybe_unused]] std::int64_t projectId,
+                         std::string_view key, std::string_view value) -> void {
+        if (key == "name") {
+          ASSERT_EQ(value, "Test");
+        } else if (key == "age") {
+          ASSERT_EQ(value, "18.5");
+        } else if (key == "is_male") {
+          ASSERT_EQ(value, "false");
+        } else if (key == "extra") {
+          const auto extra = userver::formats::json::FromString(value);
+          ASSERT_EQ(extra["field1"].As<std::string>(), "some_data");
+          ASSERT_EQ(extra["field2"].GetSize(), 3);
+          ASSERT_EQ(extra["field2"][0].As<std::uint64_t>(), 1);
+          ASSERT_EQ(extra["field2"][1].As<std::uint64_t>(), 2);
+          ASSERT_EQ(extra["field2"][2].As<std::uint64_t>(), 3);
+          ASSERT_EQ(extra["flag"].As<bool>(), true);
+        } else {
+          ASSERT_TRUE(false);
+        }
+      });
+
+  const auto context = userver::utils::MakeSharedRef<ExecutionContext>(
+      http::Request::Default(), http::Response::Default());
+  ASSERT_NO_THROW(executor_->Execute("kv-storage-store", context));
+}
+
+UTEST_F(TestLuaExecutor, KvStorageStoreError) {
+  constexpr auto kErrorMessage = "Some store error";
+
+  EXPECT_CALL(*fetcher_, Fetch("kv-storage-store-error"))
+      .WillOnce(::testing::Return(
+          ScriptInfo{.projectId = kTestProjectId, .sourceCode = R"(
+    local storage = require('miet.kv.storage').get()
+
+    local err = storage:store('message', 'Error')
+    if err ~= 'Some store error' then
+      error('Expected store error')
+    end
+  )"}));
+
+  EXPECT_CALL(*kvStorage_, Store(kTestProjectId, ::testing::_, testing::_))
+      .WillOnce(::testing::Throw(std::runtime_error(kErrorMessage)));
+
+  const auto context = userver::utils::MakeSharedRef<ExecutionContext>(
+      http::Request::Default(), http::Response::Default());
+  ASSERT_NO_THROW(executor_->Execute("kv-storage-store-error", context));
+}
+
+UTEST_F(TestLuaExecutor, KvStorageGet) {
+  EXPECT_CALL(*fetcher_, Fetch("kv-storage-get"))
+      .WillOnce(::testing::Return(
+          ScriptInfo{.projectId = kTestProjectId, .sourceCode = R"(
+    local storage = require('miet.kv.storage').get()
+
+    local name, err = storage:get('name'):as_string()
+    if name ~= 'Test' then
+      error('Unexpected \'name\' value: ' .. (err or name))
+    end
+
+    local age, err = storage:get('age'):as_number()
+    if age ~= 18.5 then
+      error('Unexpected \'age\' value: ' .. (err or age))
+    end
+
+    local is_male, err = storage:get('is_male'):as_boolean()
+    if is_male ~= true then
+      error('Unexpected \'is_male\' value: ' .. (err or is_male))
+    end
+
+    local extra, err = storage:get('extra'):as_table()
+    if extra['field1'] ~= 'some_data' or extra['field2'] ~= 3.14 
+       or extra['array'][1] ~= 'first' or extra['array'][2] ~= 'second' then
+      error('Unexpected \'extra\' value' .. (err or 'Incorrect table fields'))
+    end
+  )"}));
+
+  EXPECT_CALL(*kvStorage_, Get(kTestProjectId, ::testing::_))
+      .Times(4)
+      .WillRepeatedly([]([[maybe_unused]] std::int64_t projectId,
+                         std::string_view key) -> std::string {
+        if (key == "name") {
+          return "Test";
+        } else if (key == "age") {
+          return "18.5";
+        } else if (key == "is_male") {
+          return "true";
+        } else if (key == "extra") {
+          userver::formats::json::ValueBuilder builder;
+          builder.EmplaceNocheck("field1", "some_data");
+          builder.EmplaceNocheck("field2", 3.14);
+          userver::formats::json::ValueBuilder array;
+          array.PushBack("first");
+          array.PushBack("second");
+          builder.EmplaceNocheck("array", array);
+          return userver::formats::json::ToString(builder.ExtractValue());
+        }
+        throw std::runtime_error("No value with such key");
+      });
+
+  const auto context = userver::utils::MakeSharedRef<ExecutionContext>(
+      http::Request::Default(), http::Response::Default());
+  ASSERT_NO_THROW(executor_->Execute("kv-storage-get", context));
+}
+
+UTEST_F(TestLuaExecutor, KvStorageGetError) {
+  constexpr auto kErrorMessage = "Some get error";
+
+  EXPECT_CALL(*fetcher_, Fetch("kv-storage-get-error"))
+      .WillOnce(::testing::Return(
+          ScriptInfo{.projectId = kTestProjectId, .sourceCode = R"(
+    local storage = require('miet.kv.storage').get()
+
+    local value, err = storage:get('message'):as_string()
+    if value ~= nil or err ~= 'Some get error' then
+      error('Expected that value is nil')
+    end
+  )"}));
+
+  EXPECT_CALL(*kvStorage_, Get(kTestProjectId, ::testing::_))
+      .WillOnce(::testing::Throw(std::runtime_error(kErrorMessage)));
+
+  const auto context = userver::utils::MakeSharedRef<ExecutionContext>(
+      http::Request::Default(), http::Response::Default());
+  ASSERT_NO_THROW(executor_->Execute("kv-storage-get-error", context));
 }

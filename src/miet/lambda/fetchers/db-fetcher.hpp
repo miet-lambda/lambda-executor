@@ -10,7 +10,7 @@ class DBScriptsFetcher final : public ScriptsFetcherBase {
   explicit DBScriptsFetcher(
       userver::storages::postgres::ClusterPtr cluster) noexcept;
 
-  std::string Fetch(std::string_view id) override;
+  ScriptInfo Fetch(std::string_view id) override;
 
  private:
   userver::storages::postgres::ClusterPtr cluster_ = nullptr;
