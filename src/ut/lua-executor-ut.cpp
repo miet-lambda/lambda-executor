@@ -17,7 +17,7 @@
 
 using namespace miet::lambda;
 
-class TestLuaExecutor : public testing::Test {
+class TestLuaExecutorBase : public testing::Test {
  protected:
   static constexpr auto kTestProjectId = 1;
 
@@ -48,6 +48,10 @@ class TestLuaExecutor : public testing::Test {
   std::shared_ptr<lua::Executor> executor_ = nullptr;
 };
 
+class TestLuaExecutor : public TestLuaExecutorBase {
+ public:
+};
+
 UTEST_F(TestLuaExecutor, WithoutContext) {
   EXPECT_CALL(*fetcher_, Fetch("without-context"))
       .WillOnce(::testing::Return(
@@ -69,6 +73,19 @@ UTEST_F(TestLuaExecutor, WithoutContext) {
   const auto context = userver::utils::MakeSharedRef<ExecutionContext>(
       http::Request::Default(), http::Response::Default());
   ASSERT_NO_THROW(executor_->Execute("without-context", context));
+}
+
+UTEST_F(TestLuaExecutor, RunCached) {
+  EXPECT_CALL(*fetcher_, Fetch("run-cached"))
+      .WillOnce(::testing::Return(
+          ScriptInfo{.projectId = kTestProjectId, .sourceCode = R"(
+    --- some big script
+  )"}));
+
+  const auto context = userver::utils::MakeSharedRef<ExecutionContext>(
+      http::Request::Default(), http::Response::Default());
+  ASSERT_NO_THROW(executor_->Execute("run-cached", context));
+  ASSERT_NO_THROW(executor_->Execute("run-cached", context));
 }
 
 UTEST_F(TestLuaExecutor, JsonEncodeDecode) {
@@ -594,3 +611,49 @@ UTEST_F(TestLuaExecutor, TimeoutError) {
 
   ASSERT_EQ(currentCheck, kChecksLimit);
 }
+
+struct TestParams final {
+  std::string name;
+  std::string script;
+};
+
+class TestLuaExecutorParameterized
+    : public TestLuaExecutorBase,
+      public ::testing::WithParamInterface<TestParams> {
+ public:
+};
+
+UTEST_P(TestLuaExecutorParameterized, PreventUnsafeScripts) {
+  EXPECT_CALL(*fetcher_, Fetch("prevent-unsafe-scripts"))
+      .WillOnce(::testing::Return(ScriptInfo{.projectId = kTestProjectId,
+                                             .sourceCode = GetParam().script}));
+  const auto context = userver::utils::MakeSharedRef<ExecutionContext>(
+      http::Request::Default(), http::Response::Default());
+  ASSERT_THROW(executor_->Execute("prevent-unsafe-scripts", context),
+               ExecutionError);
+}
+
+INSTANTIATE_UTEST_SUITE_P(
+    UnsafeScripts, TestLuaExecutorParameterized,
+    ::testing::Values(
+        TestParams{.name = "OsExecute", .script = "os.execute('pwd')"},
+        TestParams{.name = "IoOpen", .script = "io.open('secrets.env')"},
+        TestParams{.name = "PackageLoadlib",
+                   .script = "package.loadlib('glibc.so')"},
+        TestParams{.name = "Dofile", .script = "dofile('local-file.lua')"},
+        TestParams{.name = "Getfenv", .script = "getfenv()"}),
+    [](const ::testing::TestParamInfo<TestParams>& info) -> std::string {
+      return info.param.name;
+    });
+
+#ifdef NDEBUG
+INSTANTIATE_UTEST_SUITE_P(
+    IncorrectScripts, TestLuaExecutorParameterized,
+    ::testing::Values(
+        TestParams{.name = "DebugGetregistry", .script = "debug.getregistry()"},
+        TestParams{.name = "Error", .script = "error('some error')"},
+        TestParams{.name = "Print", .script = "print('password')"}),
+    [](const ::testing::TestParamInfo<TestParams>& info) -> std::string {
+      return info.param.name;
+    });
+#endif
