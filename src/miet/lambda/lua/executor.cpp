@@ -42,6 +42,20 @@ class LuaTimeoutChecker final : public LuaCpp::LuaMetaObject {
   TimeoutCheckerPtr checker_ = nullptr;
 };
 
+static void RemoveUnsafeObjects(LuaContextRef context) {
+  static constexpr auto unsafeObjects = {
+      "os",         "io",     "package", "load",    "loadfile",
+      "loadstring", "dofile", "getfenv", "setfenv",
+#ifdef NDEBUG
+      "print",      "error",  "debug"
+#endif
+  };
+  for (const auto& objectName : unsafeObjects) {
+    context->AddGlobalVariable(objectName,
+                               std::make_shared<LuaCpp::Engine::LuaTNil>());
+  }
+}
+
 class Executor::Impl {
  public:
   Impl(ScriptsFetcherPtr fetcher, TimeoutCheckersFactoryPtr checkersFactory,
@@ -52,6 +66,7 @@ class Executor::Impl {
         luaContext_(userver::utils::MakeSharedRef<LuaCpp::LuaContext>()) {
     luaContext_->addHook(LuaTimeoutChecker::Check, "count",
                          kInstructionsBeforeHoock);
+    RemoveUnsafeObjects(luaContext_);
   }
 
   void Execute(std::string_view id, ExecutionContextRef context) {
@@ -93,7 +108,13 @@ class Executor::Impl {
       luaEnv->emplace(kStorageVariableName, storage);
     }
     checker->Start();
-    luaContext_->RunWithEnvironment(id.data(), *luaEnv);
+    try {
+      luaContext_->RunWithEnvironment(id.data(), *luaEnv);
+    } catch (const ExecutionTimout&) {
+      throw;
+    } catch (const std::exception& ex) {
+      throw ExecutionError(ex.what());
+    }
     httpContext->PopulateResponse();
   }
 
