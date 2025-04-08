@@ -42,6 +42,19 @@ class LuaTimeoutChecker final : public LuaCpp::LuaMetaObject {
   TimeoutCheckerPtr checker_ = nullptr;
 };
 
+static void* LuaAllocator(void* ud, void* ptr, size_t osize, size_t nsize) {
+  auto* allocator = reinterpret_cast<MemoryAllocatorBase*>(ud);
+  UINVARIANT(allocator, "Memory allocator is NULL");
+  if (ptr == nullptr) {
+    osize = 0;
+  }
+  if (nsize == 0) {
+    allocator->Free(ptr, osize);
+    return nullptr;
+  }
+  return allocator->Realloc(ptr, osize, nsize);
+}
+
 static void RemoveUnsafeObjects(LuaContextRef context) {
   static constexpr auto unsafeObjects = {
       "os",         "io",     "package", "load",    "loadfile",
@@ -58,12 +71,15 @@ static void RemoveUnsafeObjects(LuaContextRef context) {
 
 class Executor::Impl {
  public:
-  Impl(ScriptsFetcherPtr fetcher, TimeoutCheckersFactoryPtr checkersFactory,
-       Dependencies deps)
-      : fetcher_(std::move(fetcher)),
-        checkersFactory_(std::move(checkersFactory)),
-        deps_(std::move(deps)),
+  Impl(ExecutorParams params, LibsDeps deps)
+      : params_(std::move(params)),
+        libsDeps_(std::move(deps)),
         luaContext_(userver::utils::MakeSharedRef<LuaCpp::LuaContext>()) {
+    UINVARIANT(params_.scriptsFetcher, "Scripts fetcher is NULL");
+    UINVARIANT(params_.timeoutCheckersFactory,
+               "Timeout checkers factory is NULL");
+    UINVARIANT(params_.memoryAllocatorsFactory,
+               "Memory allocators factory is NULL");
     luaContext_->addHook(LuaTimeoutChecker::Check, "count",
                          kInstructionsBeforeHoock);
     RemoveUnsafeObjects(luaContext_);
@@ -79,7 +95,7 @@ class Executor::Impl {
       }
     }
     if (!projectIdOpt) [[likely]] {
-      const auto [projectId, scriptSource] = fetcher_->Fetch(id);
+      const auto [projectId, scriptSource] = params_.scriptsFetcher->Fetch(id);
       auto lock = compiledStripts_.Lock();
       if (!lock->contains(id.data())) {
         luaContext_->CompileString(id.data(), scriptSource);
@@ -90,26 +106,33 @@ class Executor::Impl {
 
     const auto luaEnv = std::make_shared<LuaCpp::LuaEnvironment>();
 
-    const auto checker =
-        checkersFactory_->CreateChecker(context->GetOptions().timeout);
+    const auto memoryAllocator =
+        params_.memoryAllocatorsFactory->CreateAllocator();
+
+    const auto checker = params_.timeoutCheckersFactory->CreateChecker(
+        context->GetOptions().timeout);
     const auto luaChecker = std::make_shared<LuaTimeoutChecker>(checker);
     luaEnv->emplace(kTimeoutCheckerVariableName, luaChecker);
 
     const auto httpContext = std::make_shared<HttpContext>(luaEnv, context);
     luaEnv->emplace(kHttpContextVariableName, httpContext);
-    if (deps_.httpClient) {
-      const auto httpClient = std::make_shared<HttpClient>(deps_.httpClient);
+    if (libsDeps_.httpClient) {
+      const auto httpClient =
+          std::make_shared<HttpClient>(libsDeps_.httpClient);
       luaEnv->emplace(kHttpClientVariableName, httpClient);
     }
-    if (deps_.kvStorage) {
+    if (libsDeps_.kvStorage) {
       UINVARIANT(projectIdOpt, "Project ID is nullopt");
       const auto storage =
-          std::make_shared<Storage>(*projectIdOpt, deps_.kvStorage);
+          std::make_shared<Storage>(*projectIdOpt, libsDeps_.kvStorage);
       luaEnv->emplace(kStorageVariableName, storage);
     }
     checker->Start();
     try {
-      luaContext_->RunWithEnvironment(id.data(), *luaEnv);
+      luaContext_->RunWithEnvironment(
+          id.data(), *luaEnv,
+          LuaCpp::Engine::StateParams{.allocator = LuaAllocator,
+                                      .userData = memoryAllocator.get()});
     } catch (const ExecutionTimout&) {
       throw;
     } catch (const std::exception& ex) {
@@ -123,16 +146,14 @@ class Executor::Impl {
       std::unordered_map<std::string, std::int64_t>,
       userver::engine::SharedMutex>;
 
-  ScriptsFetcherPtr fetcher_;
-  TimeoutCheckersFactoryPtr checkersFactory_;
-  Dependencies deps_;
+  ExecutorParams params_;
+  LibsDeps libsDeps_;
   LuaContextRef luaContext_;
   ScriptsMap compiledStripts_;
 };
 
-Executor::Executor(ScriptsFetcherPtr fetcher,
-                   TimeoutCheckersFactoryPtr checkersFactory, Dependencies deps)
-    : impl_(std::move(fetcher), std::move(checkersFactory), std::move(deps)) {}
+Executor::Executor(ExecutorParams params, LibsDeps deps)
+    : impl_(std::move(params), std::move(deps)) {}
 
 Executor::~Executor() = default;
 

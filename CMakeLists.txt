@@ -44,6 +44,8 @@ add_library(${PROJECT_NAME}-objs OBJECT
     src/miet/lambda/lua/utils.cpp
     src/miet/lambda/lua/executor.hpp
     src/miet/lambda/lua/executor.cpp
+    src/miet/lambda/lua/memory-allocator.hpp
+    src/miet/lambda/lua/memory-allocator.cpp
     src/miet/lambda/lua/http-context.hpp
     src/miet/lambda/lua/http-context.cpp
     src/miet/lambda/lua/storage.hpp

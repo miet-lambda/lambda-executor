@@ -4,6 +4,7 @@
 #include <miet/lambda/http-client.hpp>
 #include <miet/lambda/key-value-storage.hpp>
 #include <miet/lambda/lua/executor.hpp>
+#include <miet/lambda/lua/memory-allocator.hpp>
 #include <miet/lambda/timeout-checker.hpp>
 
 #include <userver/clients/http/component.hpp>
@@ -30,10 +31,14 @@ Executor::Executor(const userver::components::ComponentConfig& config,
     auto httpClient = std::make_shared<http::Client>(nativeClient);
     auto storage = std::make_shared<KeyValueStorage>(cluster);
     auto checkersFactory = std::make_shared<TimeoutCheckersFactory>();
+    auto allocatorsFactory = std::make_shared<lua::MemoryAllocatorsFactory>();
     executor_ = std::make_shared<lua::Executor>(
-        std::move(fetcher), std::move(checkersFactory),
-        lua::Dependencies{.httpClient = std::move(httpClient),
-                          .kvStorage = std::move(storage)});
+        lua::ExecutorParams{
+            .scriptsFetcher = std::move(fetcher),
+            .timeoutCheckersFactory = std::move(checkersFactory),
+            .memoryAllocatorsFactory = std::move(allocatorsFactory)},
+        lua::LibsDeps{.httpClient = std::move(httpClient),
+                      .kvStorage = std::move(storage)});
   } else {
     throw std::runtime_error("Unexpected executor type");
   }
