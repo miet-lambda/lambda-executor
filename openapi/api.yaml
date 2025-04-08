@@ -85,5 +85,7 @@ paths:
                     - message
         '404':
           description: Non-existent script id
+        '408':
+          description: Script execution timeout
         '500':
           description: Internal server error or lambda execution error
