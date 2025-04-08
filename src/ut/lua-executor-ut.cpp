@@ -4,6 +4,7 @@
 
 #include <miet/lambda/testutils/mocks/http-client.hpp>
 #include <miet/lambda/testutils/mocks/key-value-storage.hpp>
+#include <miet/lambda/testutils/mocks/memory-allocator.hpp>
 #include <miet/lambda/testutils/mocks/scripts-fetcher.hpp>
 #include <miet/lambda/testutils/mocks/timeout-checker.hpp>
 #include <miet/lambda/testutils/utils.hpp>
@@ -24,12 +25,16 @@ class TestLuaExecutorBase : public testing::Test {
   void SetUp() override {
     fetcher_ = std::make_shared<ScriptsFetcherMock>();
     checker_ = std::make_shared<TimeoutCheckerMock>();
+    allocator_ = std::make_shared<MemoryAllocatorMock>();
     checkersFactory_ = std::make_shared<TimeoutCheckersFactoryMock>();
+    allocatorsFactory_ = std::make_shared<MemoryAllocatorsFactoryMock>();
     httpClient_ = std::make_shared<HttpClientMock>();
     kvStorage_ = std::make_shared<KeyValueStorageMock>();
     executor_ = std::make_shared<lua::Executor>(
-        fetcher_, checkersFactory_,
-        lua::Dependencies{.httpClient = httpClient_, .kvStorage = kvStorage_});
+        lua::ExecutorParams{.scriptsFetcher = fetcher_,
+                            .timeoutCheckersFactory = checkersFactory_,
+                            .memoryAllocatorsFactory = allocatorsFactory_},
+        lua::LibsDeps{.httpClient = httpClient_, .kvStorage = kvStorage_});
 
     EXPECT_CALL(*checker_, Start()).WillRepeatedly(::testing::DoDefault());
     EXPECT_CALL(*checker_, IsExpired())
@@ -37,15 +42,29 @@ class TestLuaExecutorBase : public testing::Test {
 
     EXPECT_CALL(*checkersFactory_, CreateChecker(::testing::_))
         .WillRepeatedly(::testing::Return(checker_));
+
+    EXPECT_CALL(*allocator_, Free(::testing::_, ::testing::_))
+        .WillRepeatedly([](void* ptr, std::int32_t) -> void { free(ptr); });
+    EXPECT_CALL(*allocator_, Realloc(::testing::_, ::testing::_, ::testing::_))
+        .WillRepeatedly(
+            [](void* ptr, std::int32_t, std::int32_t size) -> void* {
+              return realloc(ptr, size);
+            });
+
+    EXPECT_CALL(*allocatorsFactory_, CreateAllocator())
+        .WillRepeatedly(::testing::Return(allocator_));
   }
 
  protected:
+  std::shared_ptr<lua::Executor> executor_ = nullptr;
+
   std::shared_ptr<ScriptsFetcherMock> fetcher_ = nullptr;
   std::shared_ptr<TimeoutCheckerMock> checker_ = nullptr;
+  std::shared_ptr<MemoryAllocatorMock> allocator_ = nullptr;
   std::shared_ptr<TimeoutCheckersFactoryMock> checkersFactory_ = nullptr;
+  std::shared_ptr<MemoryAllocatorsFactoryMock> allocatorsFactory_ = nullptr;
   std::shared_ptr<HttpClientMock> httpClient_ = nullptr;
   std::shared_ptr<KeyValueStorageMock> kvStorage_ = nullptr;
-  std::shared_ptr<lua::Executor> executor_ = nullptr;
 };
 
 class TestLuaExecutor : public TestLuaExecutorBase {
@@ -610,6 +629,43 @@ UTEST_F(TestLuaExecutor, TimeoutError) {
   ASSERT_THROW(executor_->Execute("timeout-error", context), ExecutionTimout);
 
   ASSERT_EQ(currentCheck, kChecksLimit);
+}
+
+UTEST_F(TestLuaExecutor, OutOfMemoryError) {
+  constexpr auto kMaxAllocationsCount = 1000;
+
+  EXPECT_CALL(*fetcher_, Fetch("out-of-memory-error"))
+      .WillOnce(::testing::Return(
+          ScriptInfo{.projectId = kTestProjectId, .sourceCode = R"(
+      local context = require('miet.http.context').get()
+
+      local response = context:response()
+
+      local body = 'spaaaaam'
+      for i = 1, 1000 do
+        body = body .. 'spaaaaaaaaam'
+      end
+
+      response['body'] = body
+  )"}));
+
+  std::int64_t currentAllocation = 0;
+
+  EXPECT_CALL(*allocator_, Realloc(::testing::_, ::testing::_, ::testing::_))
+      .WillRepeatedly([&](void* ptr, std::int32_t, std::int32_t size) -> void* {
+        if (currentAllocation == kMaxAllocationsCount) {
+          return nullptr;
+        }
+        ++currentAllocation;
+        return realloc(ptr, size);
+      });
+
+  const auto context = userver::utils::MakeSharedRef<ExecutionContext>(
+      http::Request::Default(), http::Response::Default());
+  ASSERT_THROW(executor_->Execute("out-of-memory-error", context),
+               ExecutionError);
+
+  ASSERT_EQ(currentAllocation, kMaxAllocationsCount);
 }
 
 struct TestParams final {
