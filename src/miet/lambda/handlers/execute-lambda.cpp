@@ -61,6 +61,8 @@ std::string ExecuteLambda::HandleRequestThrow(
     LOG_ERROR() << "Unkonw execution exception";
     throw userver::server::handlers::InternalServerError();
   }
+  request.GetHttpResponse().SetContentType(
+      userver::http::content_type::kApplicationJson);
   return userver::formats::json::ToString(
       executionContext->GetResponse().ToJson());
 }
