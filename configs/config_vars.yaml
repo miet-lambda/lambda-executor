@@ -6,9 +6,6 @@ logger-level: info
 
 is-testing: false
 
-server-port: 8080
-monitor-server-port: 8086
-
 server-name: lambda-executor
 user-agent: lambda-executor 0.0.1
 
