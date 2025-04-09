@@ -6,9 +6,10 @@ from testsuite.databases import pgsql
 
 
 def assert_response(response, expected_code):
+    content_type = 'application/json; charset=utf-8'
     assert response.status == 200
     assert response.json()['status'] == expected_code, response.json()
-    assert response.headers['Content-Type'] == 'application/json; charset=utf-8'
+    assert response.headers['Content-Type'] == content_type
 
 
 @pytest.mark.pgsql('main-db', files=['scripts.sql'])
