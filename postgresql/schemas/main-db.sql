@@ -2,7 +2,7 @@ CREATE TABLE users (
     id SERIAL PRIMARY KEY,
     login VARCHAR(255) NOT NULL,
     password VARCHAR(255) NOT NULL,
-    money_balance numeric(30,10) NOT NULL,
+    money_balance NUMERIC(30,10) NOT NULL,
     token_version INT NOT NULL
 );
 
