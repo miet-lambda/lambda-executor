@@ -3,7 +3,7 @@ CREATE TABLE users (
     login VARCHAR(255) NOT NULL,
     password VARCHAR(255) NOT NULL,
     money_balance numeric(30,10) NOT NULL,
-    token_version INT NOT NULL,
+    token_version INT NOT NULL
 );
 
 CREATE TABLE projects (
