@@ -1,5 +1,5 @@
-INSERT INTO users (id, login, password_hash, salt, money_balance) VALUES
-(1, 'test-scripts', 'password-hash', 'sault', 100);
+INSERT INTO users (id, login, password, money_balance, token_version) VALUES
+(1, 'test-scripts', 'password-hash', 100, 10);
 
 INSERT INTO projects (id, name, owner_id) VALUES
 (1, 'test-project', 1);
