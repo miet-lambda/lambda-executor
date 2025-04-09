@@ -1,38 +1,42 @@
 #include <miet/lambda/http-client.hpp>
 
-constexpr userver::clients::http::HttpMethod ToClientMethod(
-    miet::lambda::http::Request::HttpMethod method) {
-  switch (method) {
-    case miet::lambda::http::Request::HttpMethod::kDelete:
-      return userver::clients::http::HttpMethod::kDelete;
-    case miet::lambda::http::Request::HttpMethod::kGet:
-      return userver::clients::http::HttpMethod::kGet;
-    case miet::lambda::http::Request::HttpMethod::kHead:
-      return userver::clients::http::HttpMethod::kHead;
-    case miet::lambda::http::Request::HttpMethod::kPost:
-      return userver::clients::http::HttpMethod::kPost;
-    case miet::lambda::http::Request::HttpMethod::kPut:
-      return userver::clients::http::HttpMethod::kPut;
-    case miet::lambda::http::Request::HttpMethod::kPatch:
-      return userver::clients::http::HttpMethod::kPatch;
-    case miet::lambda::http::Request::HttpMethod::kOptions:
-      return userver::clients::http::HttpMethod::kOptions;
-    default:
-      throw std::runtime_error("Unknown request method");
-  }
-  return userver::clients::http::HttpMethod::kGet;
-}
+#include <userver/logging/log.hpp>
+
+#include <sstream>
 
 namespace miet::lambda::http {
+static std::string BuildUrlWithQueryParams(const Request& request) {
+  std::ostringstream url;
+  url << request.GetUrl();
+  if (!request.GetQueryParams()->empty()) {
+    url << '?';
+    bool isFirstParam = true;
+    for (const auto& [key, value] : *request.GetQueryParams()) {
+      if (isFirstParam) {
+        isFirstParam = false;
+        url << '&';
+      }
+      url << key << '=' << value;
+    }
+  }
+  return url.str();
+}
+
 Client::Client(NativeClient& client) noexcept : client_(client) {}
 
 http::Response Client::Send(const http::Request& request) {
+  LOG_DEBUG() << "Query parameters size: " << request.GetQueryParams()->size();
+  LOG_DEBUG() << "Url with query parameteres: "
+              << BuildUrlWithQueryParams(request);
+  LOG_DEBUG() << "Body: " << request.GetBody();
+
   Response unifiedResponse;
   auto response =
       client_.CreateRequest()
-          .method(ToClientMethod(request.GetMethod()))
-          .url(request.GetUrl())
           .data(request.GetBody().data())
+          .set_custom_http_request_method(
+              userver::server::http::ToString(request.GetMethod()))
+          .url(BuildUrlWithQueryParams(request))
           .headers(*request.GetHeaders())
           .timeout(std::chrono::seconds(5)) /** @todo pass custom timeout */
           .perform();

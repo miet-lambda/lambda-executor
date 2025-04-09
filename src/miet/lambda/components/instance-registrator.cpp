@@ -43,6 +43,7 @@ void InstanceRegistrator::OnAllComponentsLoaded() {
   const auto result = cluster_->Execute(
       userver::storages::postgres::ClusterHostType::kMaster, R"(
     INSERT INTO active_runner_instances (ip_address, port) VALUES ($1, $2)
+    ON CONFLICT (ip_address, port) DO NOTHING
   )",
       info_.hostname, userver::storages::postgres::Smallint(info_.port));
   if (result.RowsAffected() != 1) {
