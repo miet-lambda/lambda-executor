@@ -1,16 +1,9 @@
 CREATE TABLE users (
     id SERIAL PRIMARY KEY,
     login VARCHAR(255) NOT NULL,
-    password_hash VARCHAR(255) NOT NULL,
-    salt VARCHAR(255) NOT NULL,
-    money_balance MONEY NOT NULL
-);
-
-CREATE TABLE tokens (
-    token VARCHAR(255) PRIMARY KEY,
-    user_id INT NOT NULL,
-    expiration_time BIGINT NOT NULL,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    password VARCHAR(255) NOT NULL,
+    money_balance NUMERIC(30, 10) NOT NULL,
+    token_version INT NOT NULL
 );
 
 CREATE TABLE projects (
