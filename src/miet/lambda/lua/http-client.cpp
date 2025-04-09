@@ -37,7 +37,7 @@ class HttpClientMethod final : public LuaCpp::LuaMetaObject {
     const std::string_view method = lua_tostring(L, 3);
     const std::string_view url = lua_tostring(L, 4);
 
-    http::Request request;
+    auto request = http::Request::Default();
     request.SetMethod(userver::server::http::HttpMethodFromString(method));
     request.SetUrl(url.data());
 
@@ -91,6 +91,8 @@ class HttpClientMethod final : public LuaCpp::LuaMetaObject {
         }
       }
     }
+    LOG_DEBUG() << "PopulateAdditionalParams: query parameters size: "
+                << query->size();
     lua_settop(L, 5);
     const auto headers = std::make_shared<userver::http::headers::HeaderMap>();
     {

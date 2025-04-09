@@ -124,13 +124,14 @@ INSERT INTO scripts (id, path, parent_project_id, source_code) VALUES
   local incoming_request = context:request()
   local outgoing_response = context:response()
 
-  local auth_info = {
-    login = "test",
-    password = "password"
-  }
-
   local response, err = client:post("$mockserver/users/data", {
-    body = json.encode(auth_info, { indent = true }),
+    body = {
+      login = "test",
+      password = "password"
+    },
+    query = {
+      key = "value"
+    },
     headers = {
       Authorization = "basic"
     }
