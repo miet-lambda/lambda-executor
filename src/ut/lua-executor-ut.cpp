@@ -136,6 +136,29 @@ UTEST_F(TestLuaExecutor, JsonEncodeDecode) {
   ASSERT_NO_THROW(executor_->Execute("json-encode-decode", context));
 }
 
+UTEST_F(TestLuaExecutor, AccessToInternalVariables) {
+  EXPECT_CALL(*fetcher_, Fetch("access-to-internal-variable"))
+      .WillOnce(::testing::Return(
+          ScriptInfo{.projectId = kTestProjectId, .sourceCode = R"(
+      if miet_execution_timeout_checker ~= nil then -- This variable should not be accessed
+          error('Variable "miet_execution_timeout_checker" is not nil')
+      end
+      if miet_http_context == nil then
+          error('Variable "miet_http_context" is nil')
+      end
+      if miet_http_client == nil then
+          error('Variable "miet_http_client" is nil')
+      end
+      if miet_kv_storage == nil then
+          error('Variable "miet_kv_storage" is nil')
+      end
+  )"}));
+
+  const auto context = userver::utils::MakeSharedRef<ExecutionContext>(
+      http::Request::Default(), http::Response::Default());
+  ASSERT_NO_THROW(executor_->Execute("access-to-internal-variable", context));
+}
+
 UTEST_F(TestLuaExecutor, IncomingRequest) {
   EXPECT_CALL(*fetcher_, Fetch("incoming-request"))
       .WillOnce(::testing::Return(

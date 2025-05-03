@@ -29,9 +29,10 @@ class LuaTimeoutChecker final : public LuaCpp::LuaMetaObject {
   bool IsExpired() const noexcept { return checker_->IsExpired(); }
 
   static void Check(lua_State* L, [[maybe_unused]] lua_Debug* ar) {
-    lua_getglobal(L, kTimeoutCheckerVariableName);
+    lua_pushstring(L, kTimeoutCheckerVariableName);
+    lua_gettable(L, LUA_REGISTRYINDEX);
     void* checkerPtr = lua_touserdata(L, -1);
-    const auto& checker = **reinterpret_cast<LuaTimeoutChecker**>(checkerPtr);
+    const auto& checker = **reinterpret_cast<TimeoutCheckerBase**>(checkerPtr);
     if (checker.IsExpired()) {
       throw ExecutionTimout("Execution timeout is expired");
     }
@@ -112,7 +113,6 @@ class Executor::Impl {
     const auto checker = params_.timeoutCheckersFactory->CreateChecker(
         context->GetOptions().timeout);
     const auto luaChecker = std::make_shared<LuaTimeoutChecker>(checker);
-    luaEnv->emplace(kTimeoutCheckerVariableName, luaChecker);
 
     const auto httpContext = std::make_shared<HttpContext>(luaEnv, context);
     luaEnv->emplace(kHttpContextVariableName, httpContext);
@@ -129,10 +129,12 @@ class Executor::Impl {
     }
     checker->Start();
     try {
-      luaContext_->RunWithEnvironment(
-          id.data(), *luaEnv,
-          LuaCpp::Engine::StateParams{.allocator = LuaAllocator,
-                                      .userData = memoryAllocator.get()});
+      LuaCpp::Engine::StateParams params = {.allocator = LuaAllocator,
+                                            .userData = memoryAllocator.get()};
+      luaContext_->CreateStateFor(id.data(), params)
+          .AddToRegistryIndex<TimeoutCheckerBase*>(kTimeoutCheckerVariableName,
+                                                   checker.get())
+          .RunWithEnvironment(*luaEnv);
     } catch (const ExecutionTimout&) {
       throw;
     } catch (const std::exception& ex) {
