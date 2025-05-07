@@ -26,8 +26,9 @@ UTEST(Response, CustomToJson) {
   response.SetStatus(http::Response::HttpStatus::kCreated);
   response.SetBody("test body");
 
-  userver::http::headers::HeaderMap headersMap = {
-      {"Content-Type", "application/json"}, {"X-Custom-Header", "value"}};
+  userver::http::headers::HeaderMap headersMap =
+      std::initializer_list<std::pair<std::string, std::string>>{
+          {"Content-Type", "application/json"}, {"X-Custom-Header", "value"}};
   response.SetHeaders(std::make_shared<userver::http::headers::HeaderMap>(
       std::move(headersMap)));
 
