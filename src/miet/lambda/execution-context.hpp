@@ -1,12 +1,14 @@
 #pragma once
 
-#include <miet/lambda/http.hpp>
+#include <miet/lambda/http/request.hpp>
+#include <miet/lambda/http/response.hpp>
 
 #include <userver/utils/not_null.hpp>
 
 namespace miet::lambda {
 struct ExecuteOptions final {
   std::chrono::milliseconds timeout;
+  std::size_t memoryLimit = 0;
 };
 
 class ExecutionContext final {

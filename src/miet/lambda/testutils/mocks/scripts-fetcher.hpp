@@ -1,12 +1,12 @@
 #pragma once
 
-#include <miet/lambda/base/scripts-fetcher.hpp>
+#include <miet/lambda/fetchers/base/scripts-fetcher.hpp>
 
 #include <gmock/gmock.h>
 
-namespace miet::lambda {
+namespace miet::lambda::fetchers {
 class ScriptsFetcherMock final : public ScriptsFetcherBase {
  public:
-  MOCK_METHOD(ScriptInfo, Fetch, (std::string_view));
+  MOCK_METHOD(ScriptInfo, Fetch, (engine::ScriptIdType));
 };
-}  // namespace miet::lambda
+}  // namespace miet::lambda::fetchers
