@@ -1,5 +1,3 @@
-#include <miet/lambda/handlers/execute-lambda.hpp>
-
 #include <benchmark/benchmark.h>
 #include <userver/engine/run_standalone.hpp>
 #include <userver/fs/blocking/read.hpp>

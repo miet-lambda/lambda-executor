@@ -1,12 +1,12 @@
 #pragma once
 
-#include <miet/lambda/base/http-client.hpp>
+#include <miet/lambda/http/base/client.hpp>
 
 #include <gmock/gmock.h>
 
-namespace miet::lambda {
-class HttpClientMock final : public HttpClientBase {
+namespace miet::lambda::http {
+class ClientMock final : public ClientBase {
  public:
-  MOCK_METHOD(http::Response, Send, (const http::Request&));
+  MOCK_METHOD(Response, Send, (const Request&));
 };
-}  // namespace miet::lambda
+}  // namespace miet::lambda::http

@@ -14,8 +14,11 @@
 #include <userver/testsuite/testsuite_support.hpp>
 #include <userver/utils/daemon_run.hpp>
 
-#include <miet/lambda/components/executor.hpp>
 #include <miet/lambda/components/instance-registrator.hpp>
+#include <miet/lambda/components/script-engine.hpp>
+#include <miet/lambda/components/scripts-fetcher-provider.hpp>
+#include <miet/lambda/components/scripts-storage-provider.hpp>
+
 #include <miet/lambda/handlers/execute-lambda.hpp>
 
 int main(int argc, char* argv[]) {
@@ -35,9 +38,12 @@ int main(int argc, char* argv[]) {
 
   component_list.Append<userver::components::Postgres>("main-db");
 
-  component_list.Append<miet::lambda::handlers::ExecuteLambda>();
-  component_list.Append<miet::lambda::components::Executor>();
+  component_list.Append<miet::lambda::components::ScriptEngine>();
+  component_list.Append<miet::lambda::components::ScriptsFetcherProvider>();
+  component_list.Append<miet::lambda::components::ScriptsStorageProvider>();
   component_list.Append<miet::lambda::components::InstanceRegistrator>();
+
+  component_list.Append<miet::lambda::handlers::ExecuteLambda>();
 
   return userver::utils::DaemonMain(argc, argv, component_list);
 }

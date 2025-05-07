@@ -1,10 +1,10 @@
 #pragma once
 
-#include <miet/lambda/base/timeout-checker.hpp>
+#include <miet/lambda/execution/control/timeout-checker.hpp>
 
 #include <gmock/gmock.h>
 
-namespace miet::lambda {
+namespace miet::lambda::execution::control {
 class TimeoutCheckerMock final : public TimeoutCheckerBase {
  public:
   MOCK_METHOD(void, Start, (), (noexcept));
@@ -16,4 +16,4 @@ class TimeoutCheckersFactoryMock final : public TimeoutCheckersFactoryBase {
   MOCK_METHOD(TimeoutCheckerPtr, CreateChecker,
               (TimeoutCheckerBase::TimeoutType), (const, noexcept));
 };
-}  // namespace miet::lambda
+}  // namespace miet::lambda::execution::control

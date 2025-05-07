@@ -19,7 +19,11 @@ struct ExecutionError final : public InternalError {
   using InternalError::InternalError;
 };
 
-struct ExecutionTimout final : public InternalError {
+struct ExecutionTimeout final : public InternalError {
+  using InternalError::InternalError;
+};
+
+struct OutOfMemoryLimit final : public InternalError {
   using InternalError::InternalError;
 };
 }  // namespace miet::lambda

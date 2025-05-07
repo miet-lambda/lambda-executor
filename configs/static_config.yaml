@@ -96,9 +96,14 @@ components_manager:
             method: POST
             task_processor: main-task-processor
 
-        executor:
-            language-type: $executor-language-type
-            language-type#env: EXECUTOR_LANGUAGE_TYPE
+        script-engine:
+            load-enabled: true
+
+        scripts-fetcher-provider:
+            fetcher-type: db
+
+        scripts-storage-provider:
+            max-cache-size: 128
 
         instance-registrator:
             hostname: $machine-hostname

@@ -1,10 +1,11 @@
-#include <miet/lambda/lua/executor.hpp>
+#include <miet/lambda/engine/lua/compiler.hpp>
+#include <miet/lambda/engine/lua/executor.hpp>
 
 #include <miet/lambda/exceptions.hpp>
 
 #include <miet/lambda/testutils/mocks/http-client.hpp>
-#include <miet/lambda/testutils/mocks/key-value-storage.hpp>
-#include <miet/lambda/testutils/mocks/memory-allocator.hpp>
+#include <miet/lambda/testutils/mocks/memory-limit-checker.hpp>
+#include <miet/lambda/testutils/mocks/project-storage.hpp>
 #include <miet/lambda/testutils/mocks/scripts-fetcher.hpp>
 #include <miet/lambda/testutils/mocks/timeout-checker.hpp>
 #include <miet/lambda/testutils/utils.hpp>
@@ -20,51 +21,75 @@ using namespace miet::lambda;
 
 class TestLuaExecutorBase : public testing::Test {
  protected:
-  static constexpr auto kTestProjectId = 1;
+  static constexpr engine::ProjectIdType kTestProjectId = 1;
+
+  engine::ScriptPtr MakeScript(std::string_view sourceCode,
+                               engine::ProjectIdType projectId = kTestProjectId,
+                               engine::ScriptIdType scriptId = 1) {
+    const auto script = compiler_->Compile(sourceCode);
+    script->SetProjectId(projectId);
+    script->SetScriptId(scriptId);
+    return script;
+  }
 
   void SetUp() override {
-    fetcher_ = std::make_shared<ScriptsFetcherMock>();
-    checker_ = std::make_shared<TimeoutCheckerMock>();
-    allocator_ = std::make_shared<MemoryAllocatorMock>();
-    checkersFactory_ = std::make_shared<TimeoutCheckersFactoryMock>();
-    allocatorsFactory_ = std::make_shared<MemoryAllocatorsFactoryMock>();
-    httpClient_ = std::make_shared<HttpClientMock>();
-    kvStorage_ = std::make_shared<KeyValueStorageMock>();
-    executor_ = std::make_shared<lua::Executor>(
-        lua::ExecutorParams{.scriptsFetcher = fetcher_,
-                            .timeoutCheckersFactory = checkersFactory_,
-                            .memoryAllocatorsFactory = allocatorsFactory_},
-        lua::LibsDeps{.httpClient = httpClient_, .kvStorage = kvStorage_});
+    compiler_ = std::make_shared<engine::lua::Compiler>();
 
-    EXPECT_CALL(*checker_, Start()).WillRepeatedly(::testing::DoDefault());
-    EXPECT_CALL(*checker_, IsExpired())
+    httpClient_ = std::make_shared<http::ClientMock>();
+    kvStorage_ = std::make_shared<project::StorageMock>();
+
+    timeoutChecker_ =
+        std::make_shared<execution::control::TimeoutCheckerMock>();
+    timeoutCheckersFactory_ =
+        std::make_shared<execution::control::TimeoutCheckersFactoryMock>();
+
+    memoryChecker_ =
+        std::make_shared<execution::control::MemoryLimitCheckerMock>();
+    memoryCheckersFactory_ =
+        std::make_shared<execution::control::MemoryLimitCheckersFactoryMock>();
+
+    executor_ = std::make_shared<engine::lua::Executor>(
+        engine::ExecutionControlParams{
+            .memLimitCheckersFactory = memoryCheckersFactory_,
+            .timeoutCheckersFactory = timeoutCheckersFactory_},
+        engine::lua::ModulesDeps{.httpClient = httpClient_,
+                                 .projectStorage = kvStorage_});
+
+    EXPECT_CALL(*timeoutChecker_, Start())
+        .WillRepeatedly(::testing::DoDefault());
+    EXPECT_CALL(*timeoutChecker_, IsExpired())
         .WillRepeatedly(::testing::Return(false));
 
-    EXPECT_CALL(*checkersFactory_, CreateChecker(::testing::_))
-        .WillRepeatedly(::testing::Return(checker_));
+    EXPECT_CALL(*timeoutCheckersFactory_, CreateChecker(::testing::_))
+        .WillRepeatedly(::testing::Return(timeoutChecker_));
 
-    EXPECT_CALL(*allocator_, Free(::testing::_, ::testing::_))
-        .WillRepeatedly([](void* ptr, std::int32_t) -> void { free(ptr); });
-    EXPECT_CALL(*allocator_, Realloc(::testing::_, ::testing::_, ::testing::_))
-        .WillRepeatedly(
-            [](void* ptr, std::int32_t, std::int32_t size) -> void* {
-              return realloc(ptr, size);
-            });
+    EXPECT_CALL(*memoryChecker_, Allocated(::testing::_))
+        .WillRepeatedly(::testing::DoDefault());
+    EXPECT_CALL(*memoryChecker_, Deallocated(::testing::_))
+        .WillRepeatedly(::testing::DoDefault());
+    EXPECT_CALL(*memoryChecker_, IsLimitReached())
+        .WillRepeatedly(::testing::Return(false));
 
-    EXPECT_CALL(*allocatorsFactory_, CreateAllocator())
-        .WillRepeatedly(::testing::Return(allocator_));
+    EXPECT_CALL(*memoryCheckersFactory_, CreateChecker(::testing::_))
+        .WillRepeatedly(::testing::Return(memoryChecker_));
   }
 
  protected:
-  std::shared_ptr<lua::Executor> executor_ = nullptr;
+  std::shared_ptr<engine::lua::Compiler> compiler_ = nullptr;
+  std::shared_ptr<engine::lua::Executor> executor_ = nullptr;
 
-  std::shared_ptr<ScriptsFetcherMock> fetcher_ = nullptr;
-  std::shared_ptr<TimeoutCheckerMock> checker_ = nullptr;
-  std::shared_ptr<MemoryAllocatorMock> allocator_ = nullptr;
-  std::shared_ptr<TimeoutCheckersFactoryMock> checkersFactory_ = nullptr;
-  std::shared_ptr<MemoryAllocatorsFactoryMock> allocatorsFactory_ = nullptr;
-  std::shared_ptr<HttpClientMock> httpClient_ = nullptr;
-  std::shared_ptr<KeyValueStorageMock> kvStorage_ = nullptr;
+  std::shared_ptr<http::ClientMock> httpClient_ = nullptr;
+  std::shared_ptr<project::StorageMock> kvStorage_ = nullptr;
+
+  std::shared_ptr<execution::control::TimeoutCheckerMock> timeoutChecker_ =
+      nullptr;
+  std::shared_ptr<execution::control::TimeoutCheckersFactoryMock>
+      timeoutCheckersFactory_ = nullptr;
+
+  std::shared_ptr<execution::control::MemoryLimitCheckerMock> memoryChecker_ =
+      nullptr;
+  std::shared_ptr<execution::control::MemoryLimitCheckersFactoryMock>
+      memoryCheckersFactory_ = nullptr;
 };
 
 class TestLuaExecutor : public TestLuaExecutorBase {
@@ -72,9 +97,7 @@ class TestLuaExecutor : public TestLuaExecutorBase {
 };
 
 UTEST_F(TestLuaExecutor, WithoutContext) {
-  EXPECT_CALL(*fetcher_, Fetch("without-context"))
-      .WillOnce(::testing::Return(
-          ScriptInfo{.projectId = kTestProjectId, .sourceCode = R"(
+  const auto script = MakeScript(R"(
     function my_sum(a, b)
       return a + b
     end
@@ -87,30 +110,26 @@ UTEST_F(TestLuaExecutor, WithoutContext) {
     if total_sum ~= 55 then
       error('Invalid sum expected 55')
     end
-  )"}));
+  )");
 
   const auto context = userver::utils::MakeSharedRef<ExecutionContext>(
       http::Request::Default(), http::Response::Default());
-  ASSERT_NO_THROW(executor_->Execute("without-context", context));
+  ASSERT_NO_THROW(executor_->Execute(script, context));
 }
 
-UTEST_F(TestLuaExecutor, RunCached) {
-  EXPECT_CALL(*fetcher_, Fetch("run-cached"))
-      .WillOnce(::testing::Return(
-          ScriptInfo{.projectId = kTestProjectId, .sourceCode = R"(
+UTEST_F(TestLuaExecutor, DoubleRun) {
+  const auto script = MakeScript(R"(
     --- some big script
-  )"}));
+  )");
 
   const auto context = userver::utils::MakeSharedRef<ExecutionContext>(
       http::Request::Default(), http::Response::Default());
-  ASSERT_NO_THROW(executor_->Execute("run-cached", context));
-  ASSERT_NO_THROW(executor_->Execute("run-cached", context));
+  ASSERT_NO_THROW(executor_->Execute(script, context));
+  ASSERT_NO_THROW(executor_->Execute(script, context));
 }
 
 UTEST_F(TestLuaExecutor, JsonEncodeDecode) {
-  EXPECT_CALL(*fetcher_, Fetch("json-encode-decode"))
-      .WillOnce(::testing::Return(
-          ScriptInfo{.projectId = kTestProjectId, .sourceCode = R"(
+  const auto script = MakeScript(R"(
     local json = require("dkjson")
 
     local data = {
@@ -129,40 +148,33 @@ UTEST_F(TestLuaExecutor, JsonEncodeDecode) {
     for key, value in pairs(decoded_data) do
         --- some operations
     end
-  )"}));
+  )");
 
   const auto context = userver::utils::MakeSharedRef<ExecutionContext>(
       http::Request::Default(), http::Response::Default());
-  ASSERT_NO_THROW(executor_->Execute("json-encode-decode", context));
+  ASSERT_NO_THROW(executor_->Execute(script, context));
 }
 
 UTEST_F(TestLuaExecutor, AccessToInternalVariables) {
-  EXPECT_CALL(*fetcher_, Fetch("access-to-internal-variable"))
-      .WillOnce(::testing::Return(
-          ScriptInfo{.projectId = kTestProjectId, .sourceCode = R"(
-      if miet_execution_timeout_checker ~= nil then -- This variable should not be accessed
-          error('Variable "miet_execution_timeout_checker" is not nil')
-      end
-      if miet_http_context == nil then
-          error('Variable "miet_http_context" is nil')
-      end
-      if miet_http_client == nil then
-          error('Variable "miet_http_client" is nil')
-      end
-      if miet_kv_storage == nil then
-          error('Variable "miet_kv_storage" is nil')
-      end
-  )"}));
+  const auto script = MakeScript(R"(
+    if miet_execution_timeout_checker ~= nil then -- This variable should not be accessed
+        error('Variable "miet_execution_timeout_checker" is not nil')
+    end
+    if miet_http_client == nil then
+        error('Variable "miet_http_client" is nil')
+    end
+    if miet_kv_storage == nil then
+        error('Variable "miet_kv_storage" is nil')
+    end
+  )");
 
   const auto context = userver::utils::MakeSharedRef<ExecutionContext>(
       http::Request::Default(), http::Response::Default());
-  ASSERT_NO_THROW(executor_->Execute("access-to-internal-variable", context));
+  ASSERT_NO_THROW(executor_->Execute(script, context));
 }
 
 UTEST_F(TestLuaExecutor, IncomingRequest) {
-  EXPECT_CALL(*fetcher_, Fetch("incoming-request"))
-      .WillOnce(::testing::Return(
-          ScriptInfo{.projectId = kTestProjectId, .sourceCode = R"(
+  const auto script = MakeScript(R"(
     local context = require('miet.http.context').get()
 
     local request = context:request()
@@ -188,7 +200,7 @@ UTEST_F(TestLuaExecutor, IncomingRequest) {
     if request['body'] ~= 'some-data' then
       error('Incorrect body')
     end
-  )"}));
+  )");
 
   constexpr auto kRequest = R"(
     {
@@ -209,13 +221,11 @@ UTEST_F(TestLuaExecutor, IncomingRequest) {
   const auto context = userver::utils::MakeSharedRef<ExecutionContext>(
       http::Request::FromJson(userver::formats::json::FromString(kRequest)),
       http::Response::Default());
-  ASSERT_NO_THROW(executor_->Execute("incoming-request", context));
+  ASSERT_NO_THROW(executor_->Execute(script, context));
 }
 
 UTEST_F(TestLuaExecutor, OutgoingResponse) {
-  EXPECT_CALL(*fetcher_, Fetch("outgoing-response"))
-      .WillOnce(::testing::Return(
-          ScriptInfo{.projectId = kTestProjectId, .sourceCode = R"(
+  const auto script = MakeScript(R"(
     local context = require('miet.http.context').get()
 
     local response = context:response()
@@ -229,11 +239,11 @@ UTEST_F(TestLuaExecutor, OutgoingResponse) {
       name = 'Alex',
       age = 18
     }
-  )"}));
+  )");
 
   const auto context = userver::utils::MakeSharedRef<ExecutionContext>(
       http::Request::Default(), http::Response::Default());
-  ASSERT_NO_THROW(executor_->Execute("outgoing-response", context));
+  ASSERT_NO_THROW(executor_->Execute(script, context));
 
   const auto& response = context->GetResponse();
   ASSERT_EQ(response.GetStatus(), http::Response::HttpStatus::kCreated);
@@ -252,9 +262,7 @@ UTEST_F(TestLuaExecutor, HttpClientSendError) {
       userver::http::headers::PredefinedHeader("message");
   constexpr auto kSendErrorMessage = "Can't send request";
 
-  EXPECT_CALL(*fetcher_, Fetch("http-client-send-error"))
-      .WillOnce(::testing::Return(
-          ScriptInfo{.projectId = kTestProjectId, .sourceCode = R"(
+  const auto script = MakeScript(R"(
     local client = require('miet.http.client').get()
     local context = require('miet.http.context').get()
 
@@ -268,14 +276,14 @@ UTEST_F(TestLuaExecutor, HttpClientSendError) {
     outgoing_response['headers'] = {
       message = err
     }
-  )"}));
+  )");
 
   EXPECT_CALL(*httpClient_, Send(::testing::_))
       .WillOnce(::testing::Throw(std::runtime_error(kSendErrorMessage)));
 
   const auto context = userver::utils::MakeSharedRef<ExecutionContext>(
       http::Request::Default(), http::Response::Default());
-  ASSERT_NO_THROW(executor_->Execute("http-client-send-error", context));
+  ASSERT_NO_THROW(executor_->Execute(script, context));
 
   ASSERT_TRUE(context->GetResponse().GetHeaders()->contains(kMessageHeader));
   ASSERT_EQ(context->GetResponse().GetHeaders()->at(kMessageHeader),
@@ -283,9 +291,7 @@ UTEST_F(TestLuaExecutor, HttpClientSendError) {
 }
 
 UTEST_F(TestLuaExecutor, HttpClientRequest) {
-  EXPECT_CALL(*fetcher_, Fetch("http-client-request"))
-      .WillOnce(::testing::Return(
-          ScriptInfo{.projectId = kTestProjectId, .sourceCode = R"(
+  const auto script = MakeScript(R"(
     local client = require('miet.http.client').get()
 
     local response, err = client:send('HEAD', 'http://localhost:80/v1/hello')
@@ -305,7 +311,7 @@ UTEST_F(TestLuaExecutor, HttpClientRequest) {
     if err ~= nil then
       error('Can\'t send request with additional params: ' .. err)
     end
-  )"}));
+  )");
 
   std::shared_ptr<http::Request> requestWithoutParams = nullptr;
   std::shared_ptr<http::Request> requestWithParams = nullptr;
@@ -323,7 +329,7 @@ UTEST_F(TestLuaExecutor, HttpClientRequest) {
 
   const auto context = userver::utils::MakeSharedRef<ExecutionContext>(
       http::Request::Default(), http::Response::Default());
-  ASSERT_NO_THROW(executor_->Execute("http-client-request", context));
+  ASSERT_NO_THROW(executor_->Execute(script, context));
 
   ASSERT_EQ(requestWithoutParams->GetMethod(),
             http::Request::HttpMethod::kHead);
@@ -339,9 +345,7 @@ UTEST_F(TestLuaExecutor, HttpClientRequest) {
 }
 
 UTEST_F(TestLuaExecutor, HttpClientRequestTableBody) {
-  EXPECT_CALL(*fetcher_, Fetch("http-client-request-table-body"))
-      .WillOnce(::testing::Return(
-          ScriptInfo{.projectId = kTestProjectId, .sourceCode = R"(
+  const auto script = MakeScript(R"(
     local client = require('miet.http.client').get()
 
     local response, err = client:get('http://localhost:80/v1/hello', {
@@ -359,7 +363,7 @@ UTEST_F(TestLuaExecutor, HttpClientRequestTableBody) {
     if err ~= nil then
       error('Can\'t send request: ' .. err)
     end
-  )"}));
+  )");
 
   userver::formats::json::Value body;
 
@@ -371,8 +375,7 @@ UTEST_F(TestLuaExecutor, HttpClientRequestTableBody) {
 
   const auto context = userver::utils::MakeSharedRef<ExecutionContext>(
       http::Request::Default(), http::Response::Default());
-  ASSERT_NO_THROW(
-      executor_->Execute("http-client-request-table-body", context));
+  ASSERT_NO_THROW(executor_->Execute(script, context));
 
   ASSERT_EQ(body["name"].As<std::string>(), "Test");
   ASSERT_EQ(body["age"].As<std::uint64_t>(), 18ull);
@@ -386,9 +389,7 @@ UTEST_F(TestLuaExecutor, HttpClientRequestTableBody) {
 }
 
 UTEST_F(TestLuaExecutor, HttpClientResponse) {
-  EXPECT_CALL(*fetcher_, Fetch("http-client-response"))
-      .WillOnce(::testing::Return(
-          ScriptInfo{.projectId = kTestProjectId, .sourceCode = R"(
+  const auto script = MakeScript(R"(
     local client = require('miet.http.client').get()
 
     local response, err = client:send('HEAD', 'http://localhost:80/v1/hello')
@@ -407,7 +408,7 @@ UTEST_F(TestLuaExecutor, HttpClientResponse) {
     if response['body'] ~= 'Hello, world!' then
       error('Incorrect body')
     end
-  )"}));
+  )");
 
   EXPECT_CALL(*httpClient_, Send(::testing::_))
       .WillOnce(
@@ -426,13 +427,11 @@ UTEST_F(TestLuaExecutor, HttpClientResponse) {
 
   const auto context = userver::utils::MakeSharedRef<ExecutionContext>(
       http::Request::Default(), http::Response::Default());
-  ASSERT_NO_THROW(executor_->Execute("http-client-response", context));
+  ASSERT_NO_THROW(executor_->Execute(script, context));
 }
 
 UTEST_F(TestLuaExecutor, HttpClientSendAliases) {
-  EXPECT_CALL(*fetcher_, Fetch("http-client-send-aliases"))
-      .WillOnce(::testing::Return(
-          ScriptInfo{.projectId = kTestProjectId, .sourceCode = R"(
+  const auto script = MakeScript(R"(
     local client = require('miet.http.client').get()
 
     local response, err = client:get('http://localhost:80/v1/hello')
@@ -446,7 +445,7 @@ UTEST_F(TestLuaExecutor, HttpClientSendAliases) {
     if err ~= nil then
       error('Can\'t send POST request: ' .. err)
     end
-  )"}));
+  )");
 
   std::shared_ptr<http::Request::HttpMethod> getMethod = nullptr;
   std::shared_ptr<http::Request::HttpMethod> postMethod = nullptr;
@@ -466,16 +465,14 @@ UTEST_F(TestLuaExecutor, HttpClientSendAliases) {
 
   const auto context = userver::utils::MakeSharedRef<ExecutionContext>(
       http::Request::Default(), http::Response::Default());
-  ASSERT_NO_THROW(executor_->Execute("http-client-send-aliases", context));
+  ASSERT_NO_THROW(executor_->Execute(script, context));
 
   ASSERT_EQ(*getMethod, http::Request::HttpMethod::kGet);
   ASSERT_EQ(*postMethod, http::Request::HttpMethod::kPost);
 }
 
 UTEST_F(TestLuaExecutor, KvStorageStore) {
-  EXPECT_CALL(*fetcher_, Fetch("kv-storage-store"))
-      .WillOnce(::testing::Return(
-          ScriptInfo{.projectId = kTestProjectId, .sourceCode = R"(
+  const auto script = MakeScript(R"(
     local storage = require('miet.kv.storage').get()
 
     local err = storage:store('name', 'Test')
@@ -490,7 +487,7 @@ UTEST_F(TestLuaExecutor, KvStorageStore) {
       field2 = { 1, 2, 3},
       flag = true
     })
-  )"}));
+  )");
 
   EXPECT_CALL(*kvStorage_, Store(kTestProjectId, ::testing::_, testing::_))
       .Times(4)
@@ -517,35 +514,31 @@ UTEST_F(TestLuaExecutor, KvStorageStore) {
 
   const auto context = userver::utils::MakeSharedRef<ExecutionContext>(
       http::Request::Default(), http::Response::Default());
-  ASSERT_NO_THROW(executor_->Execute("kv-storage-store", context));
+  ASSERT_NO_THROW(executor_->Execute(script, context));
 }
 
 UTEST_F(TestLuaExecutor, KvStorageStoreError) {
   constexpr auto kErrorMessage = "Some store error";
 
-  EXPECT_CALL(*fetcher_, Fetch("kv-storage-store-error"))
-      .WillOnce(::testing::Return(
-          ScriptInfo{.projectId = kTestProjectId, .sourceCode = R"(
+  const auto script = MakeScript(R"(
     local storage = require('miet.kv.storage').get()
 
     local err = storage:store('message', 'Error')
     if err ~= 'Some store error' then
       error('Expected store error')
     end
-  )"}));
+  )");
 
   EXPECT_CALL(*kvStorage_, Store(kTestProjectId, ::testing::_, testing::_))
       .WillOnce(::testing::Throw(std::runtime_error(kErrorMessage)));
 
   const auto context = userver::utils::MakeSharedRef<ExecutionContext>(
       http::Request::Default(), http::Response::Default());
-  ASSERT_NO_THROW(executor_->Execute("kv-storage-store-error", context));
+  ASSERT_NO_THROW(executor_->Execute(script, context));
 }
 
 UTEST_F(TestLuaExecutor, KvStorageGet) {
-  EXPECT_CALL(*fetcher_, Fetch("kv-storage-get"))
-      .WillOnce(::testing::Return(
-          ScriptInfo{.projectId = kTestProjectId, .sourceCode = R"(
+  const auto script = MakeScript(R"(
     local storage = require('miet.kv.storage').get()
 
     local name, err = storage:get('name'):as_string()
@@ -568,7 +561,7 @@ UTEST_F(TestLuaExecutor, KvStorageGet) {
        or extra['array'][1] ~= 'first' or extra['array'][2] ~= 'second' then
       error('Unexpected \'extra\' value' .. (err or 'Incorrect table fields'))
     end
-  )"}));
+  )");
 
   EXPECT_CALL(*kvStorage_, Get(kTestProjectId, ::testing::_))
       .Times(4)
@@ -595,98 +588,91 @@ UTEST_F(TestLuaExecutor, KvStorageGet) {
 
   const auto context = userver::utils::MakeSharedRef<ExecutionContext>(
       http::Request::Default(), http::Response::Default());
-  ASSERT_NO_THROW(executor_->Execute("kv-storage-get", context));
+  ASSERT_NO_THROW(executor_->Execute(script, context));
 }
 
 UTEST_F(TestLuaExecutor, KvStorageGetError) {
   constexpr auto kErrorMessage = "Some get error";
 
-  EXPECT_CALL(*fetcher_, Fetch("kv-storage-get-error"))
-      .WillOnce(::testing::Return(
-          ScriptInfo{.projectId = kTestProjectId, .sourceCode = R"(
+  const auto script = MakeScript(R"(
     local storage = require('miet.kv.storage').get()
 
     local value, err = storage:get('message'):as_string()
     if value ~= nil or err ~= 'Some get error' then
       error('Expected that value is nil')
     end
-  )"}));
+  )");
 
   EXPECT_CALL(*kvStorage_, Get(kTestProjectId, ::testing::_))
       .WillOnce(::testing::Throw(std::runtime_error(kErrorMessage)));
 
   const auto context = userver::utils::MakeSharedRef<ExecutionContext>(
       http::Request::Default(), http::Response::Default());
-  ASSERT_NO_THROW(executor_->Execute("kv-storage-get-error", context));
+  ASSERT_NO_THROW(executor_->Execute(script, context));
 }
 
 UTEST_F(TestLuaExecutor, TimeoutError) {
   constexpr auto kChecksLimit = 5;
 
-  EXPECT_CALL(*fetcher_, Fetch("timeout-error"))
-      .WillOnce(::testing::Return(
-          ScriptInfo{.projectId = kTestProjectId, .sourceCode = R"(
-      local context = require('miet.http.context').get()
+  const auto script = MakeScript(R"(
+    local context = require('miet.http.context').get()
 
-      local response = context:response()
+    local response = context:response()
 
-      local iteration = 0
-      while true do
-        response['body'] = iteration
-        iteration = iteration + 1
-      end
-  )"}));
+    local iteration = 0
+    while true do
+      response['body'] = iteration
+      iteration = iteration + 1
+    end
+  )");
 
   std::int64_t currentCheck = 0;
 
-  EXPECT_CALL(*checker_, IsExpired()).WillRepeatedly([&currentCheck]() -> bool {
-    if (currentCheck < kChecksLimit) {
-      currentCheck++;
-      return false;
-    }
-    return true;
-  });
+  EXPECT_CALL(*timeoutChecker_, IsExpired())
+      .WillRepeatedly([&currentCheck]() -> bool {
+        if (currentCheck < kChecksLimit) {
+          currentCheck++;
+          return false;
+        }
+        return true;
+      });
 
   const auto context = userver::utils::MakeSharedRef<ExecutionContext>(
       http::Request::Default(), http::Response::Default());
-  ASSERT_THROW(executor_->Execute("timeout-error", context), ExecutionTimout);
+  ASSERT_THROW(executor_->Execute(script, context), ExecutionTimeout);
 
   ASSERT_EQ(currentCheck, kChecksLimit);
 }
 
 UTEST_F(TestLuaExecutor, OutOfMemoryError) {
-  constexpr auto kMaxAllocationsCount = 1000;
+  constexpr auto kMaxAllocationsCount = 1000ull;
 
-  EXPECT_CALL(*fetcher_, Fetch("out-of-memory-error"))
-      .WillOnce(::testing::Return(
-          ScriptInfo{.projectId = kTestProjectId, .sourceCode = R"(
-      local context = require('miet.http.context').get()
+  const auto script = MakeScript(R"(
+    local context = require('miet.http.context').get()
 
-      local response = context:response()
+    local response = context:response()
 
-      local body = 'spaaaaam'
-      for i = 1, 1000 do
-        body = body .. 'spaaaaaaaaam'
-      end
+    local body = 'spaaaaam'
+    for i = 1, 1000 do
+      body = body .. 'spaaaaaaaaam'
+    end
 
-      response['body'] = body
-  )"}));
+    response['body'] = body
+  )");
 
-  std::int64_t currentAllocation = 0;
+  std::size_t currentAllocation = 0;
 
-  EXPECT_CALL(*allocator_, Realloc(::testing::_, ::testing::_, ::testing::_))
-      .WillRepeatedly([&](void* ptr, std::int32_t, std::int32_t size) -> void* {
-        if (currentAllocation == kMaxAllocationsCount) {
-          return nullptr;
-        }
-        ++currentAllocation;
-        return realloc(ptr, size);
-      });
+  EXPECT_CALL(*memoryChecker_, IsLimitReached()).WillRepeatedly([&]() -> bool {
+    if (currentAllocation == kMaxAllocationsCount) {
+      return true;
+    }
+    ++currentAllocation;
+    return false;
+  });
 
   const auto context = userver::utils::MakeSharedRef<ExecutionContext>(
       http::Request::Default(), http::Response::Default());
-  ASSERT_THROW(executor_->Execute("out-of-memory-error", context),
-               ExecutionError);
+  ASSERT_THROW(executor_->Execute(script, context), OutOfMemoryLimit);
 
   ASSERT_EQ(currentAllocation, kMaxAllocationsCount);
 }
@@ -703,13 +689,10 @@ class TestLuaExecutorParameterized
 };
 
 UTEST_P(TestLuaExecutorParameterized, PreventUnsafeScripts) {
-  EXPECT_CALL(*fetcher_, Fetch("prevent-unsafe-scripts"))
-      .WillOnce(::testing::Return(ScriptInfo{.projectId = kTestProjectId,
-                                             .sourceCode = GetParam().script}));
+  const auto script = MakeScript(GetParam().script);
   const auto context = userver::utils::MakeSharedRef<ExecutionContext>(
       http::Request::Default(), http::Response::Default());
-  ASSERT_THROW(executor_->Execute("prevent-unsafe-scripts", context),
-               ExecutionError);
+  ASSERT_THROW(executor_->Execute(script, context), ExecutionError);
 }
 
 INSTANTIATE_UTEST_SUITE_P(

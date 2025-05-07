@@ -18,54 +18,83 @@ endif()
 
 userver_setup_environment()
 
+set(PATH_TO_SRC_ROOT src/miet/lambda)
 
-add_library(${PROJECT_NAME}-objs OBJECT
-    src/miet/lambda/base/executor.hpp
-    src/miet/lambda/base/scripts-fetcher.hpp
+add_library(${PROJECT_NAME}-context OBJECT
+    ${PATH_TO_SRC_ROOT}/http/message.cpp
+    ${PATH_TO_SRC_ROOT}/http/request.cpp
+    ${PATH_TO_SRC_ROOT}/http/response.cpp
 
-    src/miet/lambda/http.hpp
-    src/miet/lambda/http.cpp
-    src/miet/lambda/http-client.hpp
-    src/miet/lambda/http-client.cpp
-    src/miet/lambda/timeout-checker.hpp
-    src/miet/lambda/timeout-checker.cpp
-    src/miet/lambda/key-value-storage.hpp
-    src/miet/lambda/key-value-storage.cpp
-    src/miet/lambda/execution-context.hpp
-    src/miet/lambda/execution-context.cpp
-    src/miet/lambda/components/executor.hpp
-    src/miet/lambda/components/executor.cpp
-    src/miet/lambda/components/instance-registrator.hpp
-    src/miet/lambda/components/instance-registrator.cpp
-    src/miet/lambda/fetchers/db-fetcher.hpp
-    src/miet/lambda/fetchers/db-fetcher.cpp
-
-    src/miet/lambda/lua/utils.hpp
-    src/miet/lambda/lua/utils.cpp
-    src/miet/lambda/lua/executor.hpp
-    src/miet/lambda/lua/executor.cpp
-    src/miet/lambda/lua/memory-allocator.hpp
-    src/miet/lambda/lua/memory-allocator.cpp
-    src/miet/lambda/lua/http-context.hpp
-    src/miet/lambda/lua/http-context.cpp
-    src/miet/lambda/lua/storage.hpp
-    src/miet/lambda/lua/storage.cpp
-    src/miet/lambda/lua/http-client.hpp
-    src/miet/lambda/lua/http-client.cpp
-
-    src/miet/lambda/handlers/execute-lambda.hpp
-    src/miet/lambda/handlers/execute-lambda.cpp
+    ${PATH_TO_SRC_ROOT}/execution-context.cpp
 )
-target_include_directories(${PROJECT_NAME}-objs PUBLIC src/)
-target_link_libraries(${PROJECT_NAME}-objs PUBLIC
+target_include_directories(${PROJECT_NAME}-context PUBLIC src/)
+target_link_libraries(${PROJECT_NAME}-context PUBLIC
+    userver::core
+)
+
+add_library(${PROJECT_NAME}-core OBJECT
+    ${PATH_TO_SRC_ROOT}/components/instance-registrator.cpp
+    ${PATH_TO_SRC_ROOT}/components/script-engine.cpp
+    ${PATH_TO_SRC_ROOT}/components/scripts-fetcher-provider.cpp
+    ${PATH_TO_SRC_ROOT}/components/scripts-storage-provider.cpp
+
+    ${PATH_TO_SRC_ROOT}/execution/control/memory-limit-checker.cpp
+    ${PATH_TO_SRC_ROOT}/execution/control/timeout-checker.cpp
+
+    ${PATH_TO_SRC_ROOT}/fetchers/db-scripts-fetcher.cpp
+
+    ${PATH_TO_SRC_ROOT}/handlers/execute-lambda.cpp
+
+    ${PATH_TO_SRC_ROOT}/http/client.cpp
+    ${PATH_TO_SRC_ROOT}/http/message.cpp
+    ${PATH_TO_SRC_ROOT}/http/request.cpp
+    ${PATH_TO_SRC_ROOT}/http/response.cpp
+
+    ${PATH_TO_SRC_ROOT}/project/storage.cpp
+
+    ${PATH_TO_SRC_ROOT}/execution-context.cpp
+    ${PATH_TO_SRC_ROOT}/scripts-storage.cpp
+)
+target_include_directories(${PROJECT_NAME}-core PUBLIC src/)
+target_link_libraries(${PROJECT_NAME}-core PUBLIC
     userver::postgresql
+    ${PROJECT_NAME}-context
+)
+
+
+# add_library(${PROJECT_NAME}-engine SHARED
+#     ${PATH_TO_SRC_ROOT}/engine/stub/engine.cpp
+# )
+# target_include_directories(${PROJECT_NAME}-engine PUBLIC src/)
+# target_link_libraries(${PROJECT_NAME}-engine PUBLIC
+#     userver::core
+#     ${PROJECT_NAME}-context
+# )
+
+
+add_library(${PROJECT_NAME}-engine SHARED
+    ${PATH_TO_SRC_ROOT}/engine/lua/utils.cpp
+    ${PATH_TO_SRC_ROOT}/engine/lua/engine.cpp
+    ${PATH_TO_SRC_ROOT}/engine/lua/script.cpp
+    ${PATH_TO_SRC_ROOT}/engine/lua/compiler.cpp
+    ${PATH_TO_SRC_ROOT}/engine/lua/executor.cpp
+
+    ${PATH_TO_SRC_ROOT}/engine/lua/modules/http/context.cpp
+    ${PATH_TO_SRC_ROOT}/engine/lua/modules/http/client.cpp
+
+    ${PATH_TO_SRC_ROOT}/engine/lua/modules/kv/storage.cpp
+)
+target_include_directories(${PROJECT_NAME}-engine PUBLIC src/)
+target_link_libraries(${PROJECT_NAME}-engine PUBLIC
+    userver::core
+    ${PROJECT_NAME}-context
     lua5.4
     luacpp
 )
 
 
 add_executable(${PROJECT_NAME} src/main.cpp)
-target_link_libraries(${PROJECT_NAME} PRIVATE ${PROJECT_NAME}-objs)
+target_link_libraries(${PROJECT_NAME} PRIVATE ${PROJECT_NAME}-core ${PROJECT_NAME}-engine)
 add_custom_command(TARGET ${PROJECT_NAME} PRE_BUILD
                    COMMAND ${CMAKE_COMMAND} -E copy_directory
                    ${CMAKE_SOURCE_DIR}/lua/
@@ -73,25 +102,30 @@ add_custom_command(TARGET ${PROJECT_NAME} PRE_BUILD
 )
 
 
-add_executable(${PROJECT_NAME}-unittest
+add_executable(${PROJECT_NAME}-context-unittest
     src/ut/http-request-ut.cpp 
-    src/ut/http-response-ut.cpp 
-   
+    src/ut/http-response-ut.cpp
+)
+target_link_libraries(${PROJECT_NAME}-context-unittest PRIVATE ${PROJECT_NAME}-context userver::utest)
+add_google_tests(${PROJECT_NAME}-context-unittest)
+
+
+add_executable(${PROJECT_NAME}-engine-unittest
     src/ut/lua-executor-ut.cpp
 )
-target_link_libraries(${PROJECT_NAME}-unittest PRIVATE ${PROJECT_NAME}-objs userver::utest)
-add_google_tests(${PROJECT_NAME}-unittest)
-add_custom_command(TARGET ${PROJECT_NAME}-unittest PRE_BUILD
+target_link_libraries(${PROJECT_NAME}-engine-unittest PRIVATE ${PROJECT_NAME}-engine userver::utest)
+add_google_tests(${PROJECT_NAME}-engine-unittest)
+add_custom_command(TARGET ${PROJECT_NAME}-engine-unittest PRE_BUILD
                    COMMAND ${CMAKE_COMMAND} -E copy_directory
                    ${CMAKE_SOURCE_DIR}/lua/
-                  $<TARGET_FILE_DIR:${PROJECT_NAME}-unittest>
+                  $<TARGET_FILE_DIR:${PROJECT_NAME}-engine-unittest>
 )
 
 
 add_executable(${PROJECT_NAME}-benchmark
     src/benchmarks/execute-lua.cpp
 )
-target_link_libraries(${PROJECT_NAME}-benchmark PRIVATE ${PROJECT_NAME}-objs userver::ubench)
+target_link_libraries(${PROJECT_NAME}-benchmark PRIVATE ${PROJECT_NAME}-engine userver::ubench)
 add_google_benchmark_tests(${PROJECT_NAME}-benchmark)
 
 add_custom_command(TARGET ${PROJECT_NAME}-benchmark PRE_BUILD
