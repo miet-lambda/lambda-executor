@@ -1,6 +1,6 @@
 CREATE TABLE users (
     id SERIAL PRIMARY KEY,
-    login VARCHAR(255) NOT NULL,
+    login VARCHAR(255) NOT NULL UNIQUE,
     password VARCHAR(255) NOT NULL,
     money_balance NUMERIC(30, 10) NOT NULL,
     token_version INT NOT NULL
@@ -10,7 +10,8 @@ CREATE TABLE projects (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     owner_id INT NOT NULL,
-    FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE
+    FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE,
+    UNIQUE (owner_id, name)
 );
 
 CREATE TABLE scripts (
@@ -18,7 +19,8 @@ CREATE TABLE scripts (
     path VARCHAR(255) NOT NULL,
     parent_project_id INT NOT NULL,
     source_code TEXT NOT NULL,
-    FOREIGN KEY (parent_project_id) REFERENCES projects(id) ON DELETE CASCADE
+    FOREIGN KEY (parent_project_id) REFERENCES projects(id) ON DELETE CASCADE,
+    UNIQUE (parent_project_id, path)
 );
 
 CREATE TABLE projects_kv_storage (
