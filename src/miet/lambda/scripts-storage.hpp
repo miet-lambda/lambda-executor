@@ -30,6 +30,7 @@ class ScriptsStorage final : public ScriptUpdateObserverBase {
 
   userver::concurrent::Variable<ScriptsCache, userver::engine::SharedMutex>
       scripts_;
+  bool useCache_ = true;
 };
 
 using ScriptsStoragePtr = std::shared_ptr<ScriptsStorage>;
