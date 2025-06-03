@@ -6,9 +6,15 @@ ScriptsStorage::ScriptsStorage(fetchers::ScriptsFetcherPtr fetcher,
                                std::size_t maxCacheSize) noexcept
     : fetcher_(std::move(fetcher)),
       compiler_(std::move(compiler)),
-      scripts_(maxCacheSize) {}
+      scripts_(maxCacheSize) {
+  useCache_ = maxCacheSize != 0;
+}
 
 engine::ScriptPtr ScriptsStorage::Get(engine::ScriptIdType scriptId) {
+  if (!useCache_) {
+    const auto scriptInfo = fetcher_->Fetch(scriptId);
+    return compiler_->Compile(scriptInfo.sourceCode);
+  }
   {
     auto lock = scripts_.Lock();
     auto* cachedScript = lock->Get(scriptId);
