@@ -11,13 +11,13 @@ CREATE TABLE projects (
     name VARCHAR(255) NOT NULL,
     owner_id INT NOT NULL,
     FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE,
-    UNIQUE (owner_id, name)
+    UNIQUE (name)
 );
 
 CREATE TABLE scripts (
     id SERIAL PRIMARY KEY,
     path VARCHAR(255) NOT NULL,
-    parent_project_id INT NOT NULL,
+    parent_project_id INT,
     source_code TEXT NOT NULL,
     FOREIGN KEY (parent_project_id) REFERENCES projects(id) ON DELETE CASCADE,
     UNIQUE (parent_project_id, path)
