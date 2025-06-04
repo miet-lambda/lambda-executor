@@ -11,7 +11,7 @@ CREATE TABLE projects (
     name VARCHAR(255) NOT NULL,
     owner_id INT NOT NULL,
     FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE,
-    UNIQUE (owner_id, name)
+    UNIQUE (name)
 );
 
 CREATE TABLE scripts (
