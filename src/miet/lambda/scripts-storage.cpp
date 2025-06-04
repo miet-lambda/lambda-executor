@@ -13,9 +13,10 @@ ScriptsStorage::ScriptsStorage(fetchers::ScriptsFetcherPtr fetcher,
 engine::ScriptPtr ScriptsStorage::Get(engine::ScriptIdType scriptId) {
   if (!useCache_) {
     const auto scriptInfo = fetcher_->Fetch(scriptId);
-    return compiler_->Compile(scriptInfo.sourceCode);
+    const auto script = compiler_->Compile(scriptInfo.sourceCode);
     script->SetScriptId(scriptId);
     script->SetProjectId(scriptInfo.projectId);
+    return script;
   }
   {
     auto lock = scripts_.Lock();
