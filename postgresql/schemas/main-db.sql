@@ -17,7 +17,7 @@ CREATE TABLE projects (
 CREATE TABLE scripts (
     id SERIAL PRIMARY KEY,
     path VARCHAR(255) NOT NULL,
-    parent_project_id INT NOT NULL,
+    parent_project_id INT,
     source_code TEXT NOT NULL,
     FOREIGN KEY (parent_project_id) REFERENCES projects(id) ON DELETE CASCADE,
     UNIQUE (parent_project_id, path)
